@@ -13,11 +13,15 @@ Work proceeds bottom-up, adding features piecemeal once the end-to-end basis wor
 
 End-to-end, bare basics only: the currently playing song title, a smooth progress bar, and basic playback controls (previous, play/pause, next). Nothing more.
 
-## Backlog (after milestone 1, roughly in order)
+## After milestone 1
 
-- Album art and full song info in now playing.
+Done: now playing pinned to the bottom with fixed-height lines; artist line; Iosevka Aile font; album art (`cover.*` in the song's folder on the HTTP mirror, via `--music-url`). Details in `architecture.md` → "Now playing".
+
+## Backlog (roughly in order)
+
+- More song info in now playing (album, …).
 - Volume, random and single toggles.
 - Live queue view: windowed loading, re-centering, album grouping, lazy cover art.
-- Album art via the HTTP library mirror.
+- Album art beyond the song's own folder on the HTTP mirror.
 - Settings menu: httpd stream playback, stored playlists (list, clear queue, load).
 - PWA polish: icons, offline shell.

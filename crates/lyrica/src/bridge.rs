@@ -8,11 +8,18 @@ use std::{
 };
 
 use lyrica_mpd::{Client, Error, Result, Song, State, Subsystem};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
 
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(10);
+/// Escaped in URL path segments: everything but RFC 3986 unreserved characters.
+const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 pub struct Mpd {
     pub addr: String,
@@ -54,6 +61,8 @@ pub struct Snapshot {
     pub state: PlayState,
     pub title: Option<String>,
     pub artist: Option<String>,
+    /// URL of the song's folder on the music mirror, ending in `/`.
+    pub folder: Option<String>,
     pub elapsed: Option<Duration>,
     pub duration: Option<Duration>,
     /// When `elapsed` was read, so clients that subscribe later still get
@@ -68,6 +77,7 @@ enum ServerMessage<'a> {
         state: PlayState,
         title: Option<&'a str>,
         artist: Option<&'a str>,
+        folder: Option<&'a str>,
         elapsed: Option<f64>,
         duration: Option<f64>,
     },
@@ -79,6 +89,7 @@ impl Snapshot {
             state: PlayState::Offline,
             title: None,
             artist: None,
+            folder: None,
             elapsed: None,
             duration: None,
             at: Instant::now(),
@@ -98,6 +109,7 @@ impl Snapshot {
             state: self.state,
             title: self.title.as_deref(),
             artist: self.artist.as_deref(),
+            folder: self.folder.as_deref(),
             elapsed: elapsed.map(|e| e.as_secs_f64()),
             duration: self.duration.map(|d| d.as_secs_f64()),
         };
@@ -115,15 +127,16 @@ pub enum Command {
 }
 
 /// Keeps `snapshots` current, reconnecting with backoff while MPD is
-/// unreachable.
-pub async fn follow(mpd: Arc<Mpd>, snapshots: watch::Sender<Snapshot>) {
+/// unreachable. `music_url` is the HTTP mirror of MPD's music directory,
+/// ending in `/`.
+pub async fn follow(mpd: Arc<Mpd>, music_url: Option<String>, snapshots: watch::Sender<Snapshot>) {
     let mut backoff = MIN_BACKOFF;
     loop {
         let error = match mpd.connect().await {
             Ok(client) => {
                 tracing::info!("connected to MPD {} at {}", client.version(), mpd.addr);
                 backoff = MIN_BACKOFF;
-                let Err(error) = watch_player(client, &snapshots).await;
+                let Err(error) = watch_player(client, music_url.as_deref(), &snapshots).await;
                 error
             }
             Err(error) => error,
@@ -143,15 +156,16 @@ pub async fn follow(mpd: Arc<Mpd>, snapshots: watch::Sender<Snapshot>) {
 
 async fn watch_player(
     mut client: Client,
+    music_url: Option<&str>,
     snapshots: &watch::Sender<Snapshot>,
 ) -> Result<Infallible> {
     loop {
-        snapshots.send_replace(fetch(&mut client).await?);
+        snapshots.send_replace(fetch(&mut client, music_url).await?);
         client.idle(&[Subsystem::Player]).await?;
     }
 }
 
-async fn fetch(client: &mut Client) -> Result<Snapshot> {
+async fn fetch(client: &mut Client, music_url: Option<&str>) -> Result<Snapshot> {
     let status = client.status().await?;
     let at = Instant::now();
     let mut song = client.current_song().await?;
@@ -161,6 +175,9 @@ async fn fetch(client: &mut Client) -> Result<Snapshot> {
             .duration
             .or_else(|| song.as_ref().and_then(|s| s.duration)),
         artist: song.as_mut().and_then(|s| s.artist.take()),
+        folder: music_url
+            .zip(song.as_ref())
+            .and_then(|(m, s)| folder(m, &s.file)),
         title: song.map(title),
         elapsed: status.elapsed,
         at,
@@ -173,6 +190,22 @@ fn title(song: Song) -> String {
             Some((_, name)) => name.to_owned(),
             None => song.file,
         })
+}
+
+/// URL of the folder holding `file` under `music_url` (ending in `/`);
+/// `None` for streams, which have no folder.
+fn folder(music_url: &str, file: &str) -> Option<String> {
+    if file.contains("://") {
+        return None;
+    }
+    let mut url = music_url.to_owned();
+    if let Some((dir, _)) = file.rsplit_once('/') {
+        for segment in dir.split('/') {
+            url.extend(utf8_percent_encode(segment, SEGMENT));
+            url.push('/');
+        }
+    }
+    Some(url)
 }
 
 /// Runs commands from all WebSocket clients, one at a time, on a dedicated
@@ -272,6 +305,7 @@ mod tests {
             state: PlayState::Play,
             title: Some("t".into()),
             artist: Some("a".into()),
+            folder: Some("https://m/a/".into()),
             elapsed: Some(Duration::from_secs(10)),
             duration: Some(Duration::from_secs(30)),
             at,
@@ -281,7 +315,7 @@ mod tests {
             json(&snapshot, later),
             serde_json::json!({
                 "type": "state", "state": "play", "title": "t", "artist": "a",
-                "elapsed": 15.0, "duration": 30.0,
+                "folder": "https://m/a/", "elapsed": 15.0, "duration": 30.0,
             })
         );
         assert_eq!(
@@ -290,6 +324,18 @@ mod tests {
         );
         snapshot.state = PlayState::Pause;
         assert_eq!(json(&snapshot, later)["elapsed"], 10.0);
+    }
+
+    #[test]
+    fn folder_url_escapes_each_segment() {
+        let m = "https://m/";
+        assert_eq!(
+            folder(m, "Röyksopp/A, B #1 [x?]/50% (ok)/01 t.flac").unwrap(),
+            "https://m/R%C3%B6yksopp/A%2C%20B%20%231%20%5Bx%3F%5D/50%25%20%28ok%29/"
+        );
+        assert_eq!(folder(m, "a-b_c.d~/t.mp3").unwrap(), "https://m/a-b_c.d~/");
+        assert_eq!(folder(m, "top.mp3").unwrap(), m);
+        assert_eq!(folder(m, "http://radio/stream"), None);
     }
 
     #[test]

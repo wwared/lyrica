@@ -5,6 +5,8 @@ export type Snapshot = {
   state: PlayState;
   title: string | null;
   artist: string | null;
+  /** URL of the song's folder on the music mirror, ending in `/`. */
+  folder: string | null;
   elapsed: number | null;
   duration: number | null;
   at: number;
@@ -40,6 +42,7 @@ export function connect(onSnapshot: (snapshot: Snapshot) => void): Connection {
         state: "offline",
         title: null,
         artist: null,
+        folder: null,
         elapsed: null,
         duration: null,
         at: performance.now(),
@@ -86,6 +89,6 @@ function parse(data: unknown, at: number): Snapshot | undefined {
     return;
   }
   if (message?.type !== "state") return;
-  const { state, title, artist, elapsed, duration } = message;
-  return { state, title, artist, elapsed, duration, at };
+  const { state, title, artist, folder, elapsed, duration } = message;
+  return { state, title, artist, folder, elapsed, duration, at };
 }

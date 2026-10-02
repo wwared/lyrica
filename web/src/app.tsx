@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import noCover from "./assets/no-cover.png";
+import { covers, findCover } from "./cover";
 import { formatTime, position } from "./progress";
 import { connect, type Command, type Connection, type Snapshot } from "./ws";
 
@@ -24,6 +26,7 @@ export function App() {
   return (
     <main class="app">
       <section class="now-playing">
+        <Art folder={snapshot?.folder ?? null} />
         {/* Keyed so a new song starts scrolled back to the beginning. */}
         <h1
           key={heading}
@@ -61,6 +64,31 @@ export function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+/**
+ * Same folder, same image: a track change within an album changes nothing.
+ * A new folder shows the placeholder until its cover is found and decoded.
+ */
+function Art({ folder }: { folder: string | null }) {
+  // Only triggers the re-render; the URL itself is read from `covers`.
+  const [, setFound] = useState<string | null>(null);
+  useEffect(() => {
+    if (folder === null || covers.has(folder)) return;
+    let current = true;
+    findCover(folder).then((url) => {
+      if (current && url !== null) setFound(url);
+    });
+    return () => {
+      current = false;
+    };
+  }, [folder]);
+
+  return (
+    <div class="art">
+      <img src={(folder !== null && covers.get(folder)) || noCover} alt="" />
+    </div>
   );
 }
 

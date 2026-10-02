@@ -32,6 +32,11 @@ struct Args {
     #[arg(long)]
     mpd_password: Option<String>,
 
+    /// Base URL of an HTTP mirror of MPD's music directory; enables album
+    /// art (`cover.*` in the song's folder), loaded by the browser directly.
+    #[arg(long)]
+    music_url: Option<String>,
+
     /// Log filter, in tracing-subscriber `EnvFilter` syntax.
     #[arg(long, default_value = "info")]
     log: String,
@@ -50,7 +55,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
     let (snapshot_tx, snapshots) = watch::channel(Snapshot::offline());
     let (commands, command_rx) = mpsc::channel(16);
-    tokio::spawn(bridge::follow(mpd.clone(), snapshot_tx));
+    let music_url = args.music_url.map(|mut url| {
+        if !url.ends_with('/') {
+            url.push('/');
+        }
+        url
+    });
+    tokio::spawn(bridge::follow(mpd.clone(), music_url, snapshot_tx));
     tokio::spawn(bridge::execute_commands(mpd, command_rx, snapshots.clone()));
 
     let app = Router::new()

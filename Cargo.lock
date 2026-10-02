@@ -517,6 +517,7 @@ dependencies = [
  "axum",
  "clap",
  "lyrica-mpd",
+ "percent-encoding",
  "rust-embed",
  "serde",
  "serde_json",
