@@ -33,6 +33,18 @@
           craneLib = crane.mkLib pkgs;
           treefmt = treefmt-nix.lib.evalModule pkgs ./treefmt.nix;
 
+          # Upstream webfont release: nixpkgs only packages TTF/TTC builds of Iosevka.
+          iosevkaAile = pkgs.fetchzip {
+            url = "https://github.com/be5invis/Iosevka/releases/download/v34.3.0/PkgWebFont-IosevkaAile-34.3.0.zip";
+            hash = "sha256-KQ+mGYrGEJMWQYmtCj6mIEN8kVCAmkuzJzpOLtkf7/o=";
+            stripRoot = false;
+          };
+          # The weights the UI uses; Vite bundles them from web/src/fonts.
+          fonts = pkgs.runCommand "lyrica-fonts" { } ''
+            mkdir $out
+            cp ${iosevkaAile}/WOFF2/IosevkaAile-{Regular,SemiBold}.woff2 $out/
+          '';
+
           webArgs = {
             version = (lib.importJSON ./web/package.json).version;
             src = ./web;
@@ -43,6 +55,7 @@
             webArgs
             // {
               pname = "lyrica-web";
+              preBuild = "cp -r --no-preserve=mode ${fonts} src/fonts";
               installPhase = "cp -r dist $out";
             }
           );
@@ -103,6 +116,13 @@
               treefmt.config.build.wrapper
             ];
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+            # Fresh copy on every entry so it tracks the flake; gitignored.
+            shellHook = ''
+              if root=$(git rev-parse --show-toplevel 2>/dev/null) && [ -d "$root/web/src" ]; then
+                rm -rf "$root/web/src/fonts"
+                cp -r --no-preserve=mode ${fonts} "$root/web/src/fonts"
+              fi
+            '';
           };
         };
 

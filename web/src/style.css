@@ -1,3 +1,18 @@
+/* Copied in by the Nix dev shell / build (see docs/development.md). */
+@font-face {
+  font-family: "Iosevka Aile";
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/IosevkaAile-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Iosevka Aile";
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/IosevkaAile-SemiBold.woff2") format("woff2");
+}
+
 :root {
   color-scheme: light dark;
   --bg: #ffffff;
@@ -5,6 +20,7 @@
   --muted: #6b6b6b;
   --track: #e2e2e2;
   font-family:
+    "Iosevka Aile",
     system-ui,
     -apple-system,
     sans-serif;

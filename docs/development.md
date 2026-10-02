@@ -4,6 +4,8 @@
 
 `nix develop` (or direnv via `.envrc`) provides cargo/rustc/clippy/rustfmt, rust-analyzer, Node.js/npm, `treefmt`, and `mpc` for poking at MPD.
 
+Entering the dev shell also copies the Iosevka Aile woff2 files from the flake into `web/src/fonts` (gitignored), where `style.css` and Vite pick them up; `nix build` does the same in the web derivation. Outside the dev shell the build still works, with the fallback system font.
+
 Flakes only see git-tracked files: `git add` new files before `nix build`/`nix flake check`.
 
 ## Testing against MPD
