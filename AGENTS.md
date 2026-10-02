@@ -12,6 +12,8 @@ Mobile-first PWA client for MPD, single user, very large library (~200k-song que
 ## Rules
 
 - Never fetch large data (queue, playlists, library) wholesale; window/page it.
+- Never implement or send MPD commands that modify or delete files on disk: `update`/`rescan`, stored-playlist edits (`save`, `rm`, `rename`, `playlistadd`, `playlistclear`, `playlistdelete`, `playlistmove`), `sticker set`/`delete`, `mount`/`unmount`.
+- The MPD at `127.0.0.1:6600` is a real server with real data. Send it read-only commands only (no playback, queue, option or output changes); test everything else against the fake server in `lyrica-mpd`'s tests.
 - Keep docs in `docs/` current when behavior or direction changes.
 - `git add` new files before running nix commands.
 
