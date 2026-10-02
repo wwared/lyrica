@@ -24,7 +24,11 @@ export function App() {
   return (
     <main class="app">
       <section class="now-playing">
-        <h1 class={snapshot?.title ? "title" : "title placeholder"}>
+        {/* Keyed so a new song starts scrolled back to the beginning. */}
+        <h1
+          key={heading}
+          class={snapshot?.title ? "line title" : "line title placeholder"}
+        >
           {heading}
         </h1>
         <Progress snapshot={snapshot} />

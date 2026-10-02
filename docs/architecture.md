@@ -53,25 +53,27 @@ Preact + TypeScript PWA built by Vite into `web/dist`, which is embedded into th
 
 UI direction:
 
-- **Top:** album art (empty placeholder when missing), song info, progress bar; controls: previous, play/pause, next, volume (MPD-side), random toggle, single toggle.
+- **Now playing, pinned to the bottom:** album art, title, artist, progress bar, then controls at the very bottom (previous, play/pause, next; later volume (MPD-side), random toggle, single toggle). Every element has a fixed height so nothing moves when the song changes.
 - **Progress bar:** updates smoothly and continuously during playback. Each `state` message anchors `elapsed` to the local receive time (`performance.now()`); while `play`, the bar shows `elapsed + (now − anchor)`, clamped to `duration`, redrawn every animation frame. Re-anchored by every state push (seek, pause, song change) and by the fresh snapshot after a reconnect. No polling.
-- **Rest of screen:** live queue (current MPD playlist), auto-scrolling and re-centering on the current song when it changes. Rendered virtually/windowed and loaded lazily to cope with 200k entries.
+- **Rest of screen (above now playing):** live queue (current MPD playlist), auto-scrolling and re-centering on the current song when it changes. Rendered virtually/windowed and loaded lazily to cope with 200k entries.
   - Adjacent tracks from the same album are visually grouped (small gap/separator), with one album-art icon per group; no icon if the album has no art.
   - Per-track info: album, album/track artist, title, track number. Exact layout to be iterated on.
 - **Hidden settings menu:** optional listening to MPD's httpd audio stream; stored-playlist view (list server playlists, clear the queue, load a playlist).
 - Slow data (cover art, queue windows, extended info) is fetched lazily and asynchronously; controls and now-playing never wait on it.
 - Light/dark mode follows the system preference.
 
-### Milestone 1 frontend (phase 4)
+### Now playing (implemented)
 
-Scope: title, play state, progress bar, previous / play-pause / next. Nothing from the rest of the UI direction above.
+Built in phase 4 (milestone 1) and extended since. Covers title, play state, progress bar, previous / play-pause / next.
 
 - **`ws.ts`:** owns the socket and the protocol types (`Snapshot`: a `state` message stamped with its `performance.now()` receive time; `Command`). Parses `state` messages (ignores anything else), exposes `send(command)` (dropped unless open). Reconnects 1 s after a close. On `visibilitychange` to visible, closes and reopens the socket: the server sends a fresh snapshot on connect (with `elapsed` advanced), which resyncs the bar and avoids zombie sockets after iOS suspends the page; `performance.now()` may not advance while the device sleeps.
 - **Offline:** a closed socket is displayed exactly like `state: "offline"`. Buttons are disabled while offline.
 - **No optimistic UI:** buttons only send; the UI changes when the state push arrives (< 20 ms on the local MPD).
 - **Play/pause button** shows pause while `play`, play otherwise; sends `toggle`.
-- **Title:** `title`, or a placeholder when `null`.
+- **Title:** `title`, or a placeholder when `null`. One line of fixed height; overflow scrolls sideways by touch (hidden scrollbar) instead of wrapping. Keyed by the text, so a new song starts scrolled to the beginning.
 - **Progress:** the pure `position(snapshot, now)` (`progress.ts`, Vitest) computes the displayed seconds. A `requestAnimationFrame` loop runs only while playing and writes the bar (`transform: scaleX`) and the `m:ss / m:ss` text directly through refs, the text only when it changes, so Preact does not re-render per frame. `duration` `null` (streams): empty bar, elapsed text only. No seeking by tapping the bar (the protocol has no seek).
-- **Layout:** single column for iPhone portrait, touch targets ≥ 44 px, existing safe-area padding, colours from the existing CSS variables (light/dark).
+- **Layout:** single column for iPhone portrait; `.app` is a `100dvh` flex column and the now-playing section sits at the bottom (`margin-top: auto`), so progress bar and controls stay at fixed positions. Touch targets ≥ 44 px, safe-area padding, colours from the CSS variables (light/dark).
 
-Verified in headless Chromium (390×844) against the local MPD, timed from the action to the DOM change: `mpc` pause/play/seek/next/prev 2–4 ms; button toggle/next/previous 2 ms. The bar advances every frame (62 samples/s, monotonic) and holds still while paused. Killing the proxy or the server shows offline with disabled buttons; after a server restart the UI recovers within the 1 s retry (353 ms observed). After freezing the page (Chrome closed the socket) and seeking meanwhile, the visibility event opened one new socket and the bar matched MPD within 3 ms.
+Phase 4 verification, in headless Chromium (390×844) against the local MPD, timed from the action to the DOM change: `mpc` pause/play/seek/next/prev 2–4 ms; button toggle/next/previous 2 ms. The bar advances every frame (62 samples/s, monotonic) and holds still while paused. Killing the proxy or the server shows offline with disabled buttons; after a server restart the UI recovers within the 1 s retry (353 ms observed). After freezing the page (Chrome closed the socket) and seeking meanwhile, the visibility event opened one new socket and the bar matched MPD within 3 ms.
+
+Bottom layout: title, progress bar and controls kept identical positions across a song change, and an 880 px wide title stayed 28 px tall and scrollable.

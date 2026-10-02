@@ -33,21 +33,37 @@ body {
 }
 
 .app {
-  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+/* Pinned to the bottom, with fixed-height children, so nothing moves when the song changes. */
 .now-playing {
+  margin-top: auto;
   padding: 24px 20px;
 }
 
+/* One line; long text scrolls sideways instead of wrapping. */
+.line {
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.line::-webkit-scrollbar {
+  display: none;
+}
+
 .title {
+  height: 1.75rem;
   margin: 0 0 20px;
   font-size: 1.375rem;
   font-weight: 600;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
+  line-height: 1.75rem;
 }
 
 .placeholder {
@@ -70,8 +86,9 @@ body {
 }
 
 .time {
+  height: 1rem;
   margin: 8px 0 0;
-  min-height: 1.2em;
+  line-height: 1rem;
   color: var(--muted);
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
