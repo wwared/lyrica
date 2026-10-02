@@ -1,36 +1,89 @@
-export type Status =
-  | { state: "connecting" }
-  | { state: "open"; greeting: string }
-  | { state: "closed" };
+export type PlayState = "play" | "pause" | "stop" | "offline";
+
+/** A `state` message, stamped with its local receive time (`performance.now()`). */
+export type Snapshot = {
+  state: PlayState;
+  title: string | null;
+  elapsed: number | null;
+  duration: number | null;
+  at: number;
+};
+
+export type Command = "previous" | "toggle" | "next";
+
+export type Connection = {
+  /** Dropped unless the socket is open. */
+  send(command: Command): void;
+  close(): void;
+};
 
 const RETRY_MS = 1000;
 
-/** Keeps a socket to the server open, reconnecting on drops. Returns a disposer. */
-export function connect(onStatus: (status: Status) => void): () => void {
+/** Keeps a socket to the server open, reconnecting on drops. */
+export function connect(onSnapshot: (snapshot: Snapshot) => void): Connection {
   // Relative so it works under a reverse-proxy path prefix.
   const url = new URL("ws", location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
   let socket: WebSocket;
   let retry: number | undefined;
-  let disposed = false;
 
   const open = () => {
-    onStatus({ state: "connecting" });
     socket = new WebSocket(url);
-    socket.onmessage = (event) =>
-      onStatus({ state: "open", greeting: String(event.data) });
+    socket.onmessage = (event) => {
+      const snapshot = parse(event.data, performance.now());
+      if (snapshot) onSnapshot(snapshot);
+    };
     socket.onclose = () => {
-      if (disposed) return;
-      onStatus({ state: "closed" });
+      onSnapshot({
+        state: "offline",
+        title: null,
+        elapsed: null,
+        duration: null,
+        at: performance.now(),
+      });
       retry = window.setTimeout(open, RETRY_MS);
     };
   };
-  open();
 
-  return () => {
-    disposed = true;
+  const shutdown = () => {
     window.clearTimeout(retry);
+    socket.onmessage = socket.onclose = null;
     socket.close();
   };
+
+  // iOS suspends hidden pages, leaving the socket dead or silently stale and the
+  // local clock unreliable; a new socket gets a fresh snapshot with current `elapsed`.
+  const onVisibility = () => {
+    if (document.visibilityState !== "visible") return;
+    shutdown();
+    open();
+  };
+
+  open();
+  document.addEventListener("visibilitychange", onVisibility);
+
+  return {
+    send(command) {
+      if (socket.readyState === WebSocket.OPEN)
+        socket.send(JSON.stringify({ type: command }));
+    },
+    close() {
+      document.removeEventListener("visibilitychange", onVisibility);
+      shutdown();
+    },
+  };
+}
+
+function parse(data: unknown, at: number): Snapshot | undefined {
+  if (typeof data !== "string") return;
+  let message;
+  try {
+    message = JSON.parse(data);
+  } catch {
+    return;
+  }
+  if (message?.type !== "state") return;
+  const { state, title, elapsed, duration } = message;
+  return { state, title, elapsed, duration, at };
 }
