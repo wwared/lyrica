@@ -7,7 +7,10 @@ publish.workspace = true
 
 [dependencies]
 nom.workspace = true
-tokio = { workspace = true, features = ["net", "io-util", "sync", "time"] }
+tokio = { workspace = true, features = ["net", "io-util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
 [lints]
 workspace = true

@@ -13,7 +13,11 @@ Only the general direction is fixed here; details are decided while implementing
 Async MPD client library, independent of the web server.
 
 - tokio TCP connections; responses parsed with nom 8 (`Parser` trait API).
-- Implements only the commands lyrica needs, added incrementally.
+- Implements only the commands lyrica needs, added incrementally. Currently: `password`, `ping`, `status`, `currentsong`, `play`, `pause`, `previous`, `next`, `idle`.
+- **`Client`** is one connection running one command at a time; responses are framed by line and each line parsed with nom (`OK`, `ACK …`, `key: value`). Typed results (`Status`, `Song`) keep only the fields used so far and ignore unknown keys.
+  - `ACK` errors leave the connection usable. I/O and protocol errors, or a command future dropped mid-response, leave it out of sync: later commands fail with `Error::Broken` and the caller reconnects.
+  - `idle` blocks its connection, so idling needs its own `Client`. Arguments are always quoted; newlines are rejected.
+  - Not yet handled: MPD's `connection_timeout` closing unused connections, binary responses, command lists.
 - **Connection multiplexing (direction, not final):** several MPD connections behind one combined API, so slow work never delays interactive work. For example:
   - a _control_ connection for low-latency commands (play/pause/seek/volume) and reacting to state changes (`idle`);
   - a _bulk_ connection (or pool) for long-running, non-essential work: queue/playlist windows, extended song info, searches.
