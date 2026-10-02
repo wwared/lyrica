@@ -14,7 +14,7 @@ Flakes only see git-tracked files: `git add` new files before `nix build`/`nix f
 | `nix fmt`                        | Formats the whole repo (nixfmt, rustfmt, taplo, prettier) via treefmt                        |
 | `nix flake check`                | Package build, clippy (`-D warnings`), cargo tests, frontend typecheck + tests, format check |
 | `cargo run -p lyrica -- --help`  | Run the server from the workspace                                                            |
-| `npm run dev` (in `web/`)        | Vite dev server with hot reload                                                              |
+| `npm run dev` (in `web/`)        | Vite dev server with hot reload; proxies `/ws` to the server on `127.0.0.1:8080`             |
 | `npm run build` (in `web/`)      | Build the frontend into `web/dist`                                                           |
 | `npm run typecheck` / `npm test` | TypeScript check / Vitest                                                                    |
 

@@ -24,9 +24,9 @@ Async MPD client library, independent of the web server.
 
 Thin bridge between the frontend and `lyrica-mpd`.
 
-- axum on tokio; serves the embedded frontend (rust-embed) and a WebSocket endpoint for the frontend↔backend protocol (not yet designed).
+- axum on tokio; serves the embedded frontend (rust-embed) and the frontend WebSocket at `ws` (relative to the page). The protocol is not yet designed; currently the server only sends a `lyrica <version>` greeting and the frontend shows connection status, reconnecting after drops.
 - Configuration exclusively via CLI arguments (clap); no disk state.
-- Plain HTTP; intended to sit behind Caddy. All frontend URLs are relative so a path prefix works.
+- Plain HTTP; intended to sit behind Caddy. All frontend URLs are relative so a path prefix works, provided the page URL ends in `/`.
 - Setup-specific extensions live here or in `lyrica-mpd` as appropriate, e.g. resolving album art from the HTTP mirror of the music library (looking beyond the song's own folder, unlike MPD's `albumart`). Whether the frontend loads art directly from the mirror URL or the backend fetches and forwards it is undecided.
 
 ## Frontend (web/)

@@ -4,6 +4,7 @@
 //! on-disk state.
 
 mod assets;
+mod ws;
 
 use std::{error::Error, net::SocketAddr};
 
@@ -31,7 +32,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_env_filter(EnvFilter::try_new(&args.log)?)
         .init();
 
-    let app = Router::new().fallback_service(get(assets::serve));
+    let app = Router::new()
+        .route("/ws", get(ws::upgrade))
+        .fallback_service(get(assets::serve));
 
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
     tracing::info!("listening on http://{}", listener.local_addr()?);

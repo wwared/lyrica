@@ -4,7 +4,7 @@ Work proceeds bottom-up, adding features piecemeal once the end-to-end basis wor
 
 ## Phases
 
-1. **Scaffolding** — done. Nix flake (dev shell, build, fmt, check), Cargo workspace, Vite/Preact app, frontend embedded and served by the server.
+1. **Scaffolding** — done. Nix flake (dev shell, build, fmt, check), Cargo workspace, Vite/Preact app, frontend embedded and served by the server, placeholder WebSocket connection.
 2. **`lyrica-mpd` basics** — connect, greeting/version, command/response framing, errors (`ACK`), and the minimum commands for the first milestone (status, current song, play/pause, previous, next, idle).
 3. **Server + WebSocket** — server connects to MPD (`--mpd`, `--mpd-password` CLI args), exposes a WebSocket API to the frontend, pushes state changes.
 4. **Frontend** — connects to the WebSocket, shows state, sends commands.
