@@ -53,6 +53,7 @@ impl From<State> for PlayState {
 pub struct Snapshot {
     pub state: PlayState,
     pub title: Option<String>,
+    pub artist: Option<String>,
     pub elapsed: Option<Duration>,
     pub duration: Option<Duration>,
     /// When `elapsed` was read, so clients that subscribe later still get
@@ -66,6 +67,7 @@ enum ServerMessage<'a> {
     State {
         state: PlayState,
         title: Option<&'a str>,
+        artist: Option<&'a str>,
         elapsed: Option<f64>,
         duration: Option<f64>,
     },
@@ -76,6 +78,7 @@ impl Snapshot {
         Snapshot {
             state: PlayState::Offline,
             title: None,
+            artist: None,
             elapsed: None,
             duration: None,
             at: Instant::now(),
@@ -94,6 +97,7 @@ impl Snapshot {
         let message = ServerMessage::State {
             state: self.state,
             title: self.title.as_deref(),
+            artist: self.artist.as_deref(),
             elapsed: elapsed.map(|e| e.as_secs_f64()),
             duration: self.duration.map(|d| d.as_secs_f64()),
         };
@@ -150,12 +154,13 @@ async fn watch_player(
 async fn fetch(client: &mut Client) -> Result<Snapshot> {
     let status = client.status().await?;
     let at = Instant::now();
-    let song = client.current_song().await?;
+    let mut song = client.current_song().await?;
     Ok(Snapshot {
         state: status.state.into(),
         duration: status
             .duration
             .or_else(|| song.as_ref().and_then(|s| s.duration)),
+        artist: song.as_mut().and_then(|s| s.artist.take()),
         title: song.map(title),
         elapsed: status.elapsed,
         at,
@@ -266,6 +271,7 @@ mod tests {
         let mut snapshot = Snapshot {
             state: PlayState::Play,
             title: Some("t".into()),
+            artist: Some("a".into()),
             elapsed: Some(Duration::from_secs(10)),
             duration: Some(Duration::from_secs(30)),
             at,
@@ -274,7 +280,7 @@ mod tests {
         assert_eq!(
             json(&snapshot, later),
             serde_json::json!({
-                "type": "state", "state": "play", "title": "t",
+                "type": "state", "state": "play", "title": "t", "artist": "a",
                 "elapsed": 15.0, "duration": 30.0,
             })
         );

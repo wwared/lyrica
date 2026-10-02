@@ -4,6 +4,7 @@ export type PlayState = "play" | "pause" | "stop" | "offline";
 export type Snapshot = {
   state: PlayState;
   title: string | null;
+  artist: string | null;
   elapsed: number | null;
   duration: number | null;
   at: number;
@@ -38,6 +39,7 @@ export function connect(onSnapshot: (snapshot: Snapshot) => void): Connection {
       onSnapshot({
         state: "offline",
         title: null,
+        artist: null,
         elapsed: null,
         duration: null,
         at: performance.now(),
@@ -84,6 +86,6 @@ function parse(data: unknown, at: number): Snapshot | undefined {
     return;
   }
   if (message?.type !== "state") return;
-  const { state, title, elapsed, duration } = message;
-  return { state, title, elapsed, duration, at };
+  const { state, title, artist, elapsed, duration } = message;
+  return { state, title, artist, elapsed, duration, at };
 }

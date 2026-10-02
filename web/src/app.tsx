@@ -31,6 +31,9 @@ export function App() {
         >
           {heading}
         </h1>
+        <p key={snapshot?.artist} class="line artist">
+          {snapshot?.artist}
+        </p>
         <Progress snapshot={snapshot} />
         <div class="controls">
           <button

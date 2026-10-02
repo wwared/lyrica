@@ -5,6 +5,7 @@ import type { Snapshot } from "./ws";
 const snapshot = (overrides: Partial<Snapshot>): Snapshot => ({
   state: "play",
   title: "t",
+  artist: "a",
   elapsed: 10,
   duration: 100,
   at: 1000,
