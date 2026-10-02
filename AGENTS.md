@@ -15,6 +15,18 @@ Mobile-first PWA client for MPD, single user, very large library (~200k-song que
 - Keep docs in `docs/` current when behavior or direction changes.
 - `git add` new files before running nix commands.
 
+## Writing style
+
+**Be succinct, direct and to the point.** This applies to everything you write: docs, doc comments, code comments, commit messages, replies.
+
+- Use the fewest words that stay clear. No filler, no preamble, no restating the question, no hedging.
+- Code comments explain _why_ only when the code can't. Never narrate what the code does.
+- Evidence and statistics belong in `docs/`, not in `src/`.
+
+## Commits
+
+Commit often, without asking, during autonomous work: each commit is one self-contained unit of work (builds, `nix flake check` passes, docs updated), with a message saying what changed and why. Don't batch unrelated changes. Never commit secrets or build artifacts.
+
 ## Docs (`docs/`)
 
 - `goals.md` — goals, constraints, non-goals, stack
