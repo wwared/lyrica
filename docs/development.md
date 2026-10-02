@@ -8,7 +8,9 @@ Flakes only see git-tracked files: `git add` new files before `nix build`/`nix f
 
 ## Testing against MPD
 
-`lyrica-mpd` tests run against an in-process fake MPD (scripted request/response pairs), so `nix flake check` needs no server. The local MPD (`127.0.0.1:6600`) holds real data: probe it with read-only commands only (`status`, `currentsong`, `ping`, `idle`). Playback/queue changes are verified against the fake server. To exercise `idle` without touching playback, `subscribe <channel>` from a second connection that stays open triggers `changed: subscription`.
+`lyrica-mpd` tests run against an in-process fake MPD (scripted request/response pairs), so `nix flake check` needs no server. Stateful behaviour is verified against the local MPD (`127.0.0.1:6600`, audio output disabled) within the limits in `AGENTS.md`: read-only commands and playback control only, restoring song, position (`mpc seek`) and play state afterwards. `mpc` in the dev shell is handy for that. To wake `idle` without touching playback, `subscribe <channel>` from a second connection that stays open triggers `changed: subscription`.
+
+MPD emits no idle event for commands that change nothing (e.g. `play` while playing), so a test waiting on `idle` after such a command hangs.
 
 ## Commands
 
