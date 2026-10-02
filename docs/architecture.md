@@ -28,23 +28,23 @@ Async MPD client library, independent of the web server.
 
 Thin bridge between the frontend and `lyrica-mpd`.
 
-- axum on tokio; serves the embedded frontend (rust-embed) and the frontend WebSocket at `ws` (relative to the page). Until phase 3 lands, the server only sends a `lyrica <version>` greeting; the frontend shows connection status and reconnects after drops.
+- axum on tokio; serves the embedded frontend (rust-embed) and the frontend WebSocket at `ws` (relative to the page).
 - Configuration exclusively via CLI arguments (clap); no disk state.
 - Plain HTTP; intended to sit behind Caddy. All frontend URLs are relative so a path prefix works, provided the page URL ends in `/`.
 - Setup-specific extensions live here or in `lyrica-mpd` as appropriate, e.g. resolving album art from the HTTP mirror of the music library (looking beyond the song's own folder, unlike MPD's `albumart`). Whether the frontend loads art directly from the mirror URL or the backend fetches and forwards it is undecided.
 
-### MPD bridge (phase 3, decided)
+### MPD bridge (`bridge.rs`, `ws.rs`)
 
 - **CLI:** `--mpd <host:port>` (default `127.0.0.1:6600`), optional `--mpd-password`, sent with `password` after every connect.
 - **Idle connection:** a task owns one `Client`. It fetches `status` + `currentsong`, publishes the snapshot, then loops `idle(player)` → refetch → publish. Snapshot fetches run on this connection, so they never queue behind commands.
 - **Command connection:** a task owns a second `Client` and serves an `mpsc` of commands from all WS clients, serialized. MPD closes connections unused for `connection_timeout` (default 60 s), so on `Io`/`Broken` it reconnects and retries the command once; the closed connection never executed it. `Ack` is logged, not retried.
-- **Snapshot fan-out:** `tokio::sync::watch`. Each WS client gets the current snapshot on connect, then every change.
+- **Snapshot fan-out:** `tokio::sync::watch`. Each WS client gets the current snapshot on connect, then every change. While playing, `elapsed` is advanced to the send time, so late subscribers get the current position.
 - **MPD unreachable:** the idle task publishes an `offline` snapshot and reconnects with backoff (1 s doubling to 10 s). Commands sent while offline are dropped with a log line.
 - **WS protocol:** JSON text messages (serde). Revisit only if size or speed proves a problem.
   - Server → client: `{"type":"state","state":"play"|"pause"|"stop"|"offline","title":string|null,"elapsed":number|null,"duration":number|null}`. `title` is the `Title` tag, falling back to the file name; `null` when there is no current song. `elapsed`/`duration` are seconds (fractional) from `status`.
   - MPD sends no progress events (the `player` event fires only on play/pause/stop, seek and song change), so the server does not stream progress; the frontend extrapolates it (see Frontend).
   - Client → server: `{"type":"previous"}`, `{"type":"toggle"}`, `{"type":"next"}`. Invalid messages are logged and ignored.
-  - No per-command replies: the state push triggered by `idle` is the confirmation. Measured on the local MPD: the `player` event arrives < 1 ms after `pause`, 7–18 ms after `next`/`previous`.
+  - No per-command replies: the state push triggered by `idle` is the confirmation. Measured on the local MPD (WS client to state message): `toggle` 0.4–1.8 ms, `next` 19 ms, `previous` 3 ms; via `mpc` (including process spawn): `pause` 1.5 ms, `play` 40 ms, `seek` 8 ms. After killing the proxy, `offline` arrives in 40 ms; the first command after a lost connection or a 65 s idle gap reconnects and succeeds in < 2 ms. MPD does not time out connections in `idle`.
 - **`toggle`:** `play` → `pause(true)`, `pause` → `pause(false)`, `stop` → `play()`, using the latest snapshot. Never send a command that changes nothing: MPD emits no idle event for it, so the frontend would get no update.
 
 ## Frontend (web/)

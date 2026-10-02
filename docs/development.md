@@ -12,6 +12,8 @@ Flakes only see git-tracked files: `git add` new files before `nix build`/`nix f
 
 MPD emits no idle event for commands that change nothing (e.g. `play` while playing), so a test waiting on `idle` after such a command hangs.
 
+To test connection loss, run lyrica against a proxy and kill it, never MPD itself: `nix shell nixpkgs#socat -c socat TCP-LISTEN:6601,fork,reuseaddr TCP:127.0.0.1:6600`, start lyrica with `--mpd 127.0.0.1:6601`, then `pkill -f TCP-LISTEN:6601` (kills the forked per-connection children too).
+
 ## Commands
 
 | Command                          | What it does                                                                                 |
