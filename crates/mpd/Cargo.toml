@@ -1,0 +1,13 @@
+[package]
+name = "lyrica-mpd"
+description = "Async MPD client: protocol parsing and multiplexed connections"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+nom.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "sync", "time"] }
+
+[lints]
+workspace = true

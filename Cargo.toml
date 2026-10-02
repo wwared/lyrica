@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+lyrica-mpd = { path = "crates/mpd" }
+
+axum = "0.8.9"
+clap = { version = "4.6.7", features = ["derive"] }
+nom = "8.0.0"
+rust-embed = { version = "8.12.0", features = [
+  "interpolate-folder-path",
+  "mime-guess",
+] }
+tokio = "1.53.1"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

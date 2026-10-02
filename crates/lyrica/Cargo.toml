@@ -1,0 +1,24 @@
+[package]
+name = "lyrica"
+description = "Mobile-first PWA client for MPD (server + embedded frontend)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+lyrica-mpd.workspace = true
+
+axum.workspace = true
+clap.workspace = true
+rust-embed.workspace = true
+tokio = { workspace = true, features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "signal",
+] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,9 @@
+{
+  "name": "lyrica",
+  "short_name": "lyrica",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#111111"
+}
