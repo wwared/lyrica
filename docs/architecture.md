@@ -54,10 +54,22 @@ Preact + TypeScript PWA built by Vite into `web/dist`, which is embedded into th
 UI direction:
 
 - **Top:** album art (empty placeholder when missing), song info, progress bar; controls: previous, play/pause, next, volume (MPD-side), random toggle, single toggle.
-- **Progress bar:** updates smoothly and continuously during playback. Each `state` message anchors `elapsed` to the local receive time (`performance.now()`); while `play`, the bar shows `elapsed + (now − anchor)`, clamped to `duration`, redrawn every animation frame. Re-anchored by every state push (seek, pause, song change) and by the fresh snapshot after a reconnect; also resync when the page becomes visible again, since iOS suspends background pages and their sockets. No polling.
+- **Progress bar:** updates smoothly and continuously during playback. Each `state` message anchors `elapsed` to the local receive time (`performance.now()`); while `play`, the bar shows `elapsed + (now − anchor)`, clamped to `duration`, redrawn every animation frame. Re-anchored by every state push (seek, pause, song change) and by the fresh snapshot after a reconnect. No polling.
 - **Rest of screen:** live queue (current MPD playlist), auto-scrolling and re-centering on the current song when it changes. Rendered virtually/windowed and loaded lazily to cope with 200k entries.
   - Adjacent tracks from the same album are visually grouped (small gap/separator), with one album-art icon per group; no icon if the album has no art.
   - Per-track info: album, album/track artist, title, track number. Exact layout to be iterated on.
 - **Hidden settings menu:** optional listening to MPD's httpd audio stream; stored-playlist view (list server playlists, clear the queue, load a playlist).
 - Slow data (cover art, queue windows, extended info) is fetched lazily and asynchronously; controls and now-playing never wait on it.
 - Light/dark mode follows the system preference.
+
+### Milestone 1 frontend (phase 4, decided)
+
+Scope: title, play state, progress bar, previous / play-pause / next. Nothing from the rest of the UI direction above.
+
+- **`ws.ts`:** owns the socket and the protocol types (`State` message, `Command`). Parses `state` messages (ignore anything else), exposes `send(command)` (no-op unless open). Keeps the existing 1 s reconnect. On `visibilitychange` to visible, close and reopen the socket: the server sends a fresh snapshot on connect (with `elapsed` advanced), which resyncs the bar and avoids zombie sockets after iOS suspends the page; `performance.now()` may not advance while the device sleeps.
+- **Offline:** a closed socket is displayed exactly like `state: "offline"`. Buttons are disabled while offline.
+- **No optimistic UI:** buttons only send; the UI changes when the state push arrives (< 20 ms on the local MPD).
+- **Play/pause button** shows pause while `play`, play otherwise; sends `toggle`.
+- **Title:** `title`, or a placeholder when `null`.
+- **Progress:** a pure function `position(anchor, now)` (in its own module, unit-tested with Vitest) computes the displayed seconds. A `requestAnimationFrame` loop runs only while playing and writes the bar width (`transform: scaleX`) directly through a ref, so Preact does not re-render per frame. Show `m:ss / m:ss` text, re-rendered only when the displayed second changes. `duration` `null` (streams): empty bar, elapsed text only. No seeking by tapping the bar (the protocol has no seek).
+- **Layout:** single column for iPhone portrait, touch targets ≥ 44 px, existing safe-area padding, colours from the existing CSS variables (light/dark).

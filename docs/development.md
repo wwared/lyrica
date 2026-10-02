@@ -14,6 +14,12 @@ MPD emits no idle event for commands that change nothing (e.g. `play` while play
 
 To test connection loss, run lyrica against a proxy and kill it, never MPD itself: `nix shell nixpkgs#socat -c socat TCP-LISTEN:6601,fork,reuseaddr TCP:127.0.0.1:6600`, start lyrica with `--mpd 127.0.0.1:6601`, then `pkill -f TCP-LISTEN:6601` (kills the forked per-connection children too).
 
+## Testing the frontend
+
+Run the server (`cargo run -p lyrica`, defaults to MPD at `127.0.0.1:6600` and HTTP on `127.0.0.1:8080`) and either `npm run dev` in `web/` (proxies `/ws` to it) or `npm run build` (served by the debug server without recompiling).
+
+Headless Chromium (`nix shell nixpkgs#chromium`) needs `--headless=new --no-sandbox --password-store=basic --use-mock-keychain --remote-debugging-port=9333`; drive it over CDP. Useful CDP calls: `Emulation.setDeviceMetricsOverride` (390×844, `mobile: true`) for the iPhone viewport, `Runtime.evaluate` to read the DOM and click, `Page.setWebLifecycleState` (`frozen` then `active`) or `Emulation.setFocusEmulationEnabled` plus dispatching `visibilitychange` to simulate the page being hidden and shown. A Bun or Node WebSocket client is handy for raw protocol checks.
+
 ## Commands
 
 | Command                          | What it does                                                                                 |
