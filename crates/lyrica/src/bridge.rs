@@ -61,6 +61,7 @@ pub struct Snapshot {
     pub state: PlayState,
     pub title: Option<String>,
     pub artist: Option<String>,
+    pub album: Option<String>,
     /// URL of the song's folder on the music mirror, ending in `/`.
     pub folder: Option<String>,
     pub elapsed: Option<Duration>,
@@ -81,6 +82,7 @@ enum ServerMessage<'a> {
         state: PlayState,
         title: Option<&'a str>,
         artist: Option<&'a str>,
+        album: Option<&'a str>,
         folder: Option<&'a str>,
         elapsed: Option<f64>,
         duration: Option<f64>,
@@ -96,6 +98,7 @@ impl Snapshot {
             state: PlayState::Offline,
             title: None,
             artist: None,
+            album: None,
             folder: None,
             elapsed: None,
             duration: None,
@@ -119,6 +122,7 @@ impl Snapshot {
             state: self.state,
             title: self.title.as_deref(),
             artist: self.artist.as_deref(),
+            album: self.album.as_deref(),
             folder: self.folder.as_deref(),
             elapsed: elapsed.map(|e| e.as_secs_f64()),
             duration: self.duration.map(|d| d.as_secs_f64()),
@@ -193,6 +197,7 @@ async fn fetch(client: &mut Client, music_url: Option<&str>) -> Result<Snapshot>
             .duration
             .or_else(|| song.as_ref().and_then(|s| s.duration)),
         artist: song.as_mut().and_then(|s| s.artist.take()),
+        album: song.as_mut().and_then(|s| s.album.take()),
         folder: music_url
             .zip(song.as_ref())
             .and_then(|(m, s)| folder(m, &s.file)),
@@ -336,6 +341,7 @@ mod tests {
             state: PlayState::Play,
             title: Some("t".into()),
             artist: Some("a".into()),
+            album: Some("al".into()),
             folder: Some("https://m/a/".into()),
             elapsed: Some(Duration::from_secs(10)),
             duration: Some(Duration::from_secs(30)),
@@ -348,7 +354,7 @@ mod tests {
         assert_eq!(
             json(&snapshot, later),
             serde_json::json!({
-                "type": "state", "state": "play", "title": "t", "artist": "a",
+                "type": "state", "state": "play", "title": "t", "artist": "a", "album": "al",
                 "folder": "https://m/a/", "elapsed": 15.0, "duration": 30.0,
                 "random": true, "repeat": false, "single": true,
             })

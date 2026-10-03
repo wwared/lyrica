@@ -6,6 +6,7 @@ const snapshot = (overrides: Partial<Snapshot>): Snapshot => ({
   state: "play",
   title: "t",
   artist: "a",
+  album: null,
   folder: null,
   elapsed: 10,
   duration: 100,
