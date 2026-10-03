@@ -55,6 +55,9 @@ body {
   display: flex;
   flex-direction: column;
   height: 100dvh;
+  /* Mode switch: full-width rows start at their mini-mode offset, past the
+     right edge; without clipping, desktop browsers flash a scrollbar. */
+  overflow: clip;
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
@@ -81,11 +84,12 @@ body {
 
 /* Pinned to the bottom, with fixed-height children, so nothing moves when the
    song changes. Rows keep their height and position in both modes (the
-   full-mode art is drawn above the section); mini mode only moves them right
-   of the art. */
+   full-mode art is drawn above the section); mini mode moves them right of
+   the art. */
 .now-playing {
-  /* Title, artist and progress rows: 1.75rem + 4px + 1.25rem + 20px + 4px + 8px + 1rem. */
-  --mini-art: calc(4rem + 36px);
+  /* Every row: title 1.75rem + 4px, artist 1.25rem + 20px, progress
+     4px + 8px + 1rem, controls 16px + 56px. */
+  --mini-art: calc(4rem + 108px);
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 24px;
@@ -98,13 +102,14 @@ body {
   padding: 24px 20px;
 }
 
+/* The art spans every row; the controls share the column right of it. */
 .mini .now-playing {
   grid-template-columns: var(--mini-art) minmax(0, 1fr) 24px;
   grid-template-areas:
     "art title switch"
     "art artist switch"
     "art progress progress"
-    "controls controls controls";
+    "art controls controls";
 }
 
 /* Full: centred above the title with a 20 px gap (the padding is 24 px).
@@ -119,7 +124,7 @@ body {
   margin: 0 auto;
 }
 
-/* Mini: left-anchored, as tall as the title, artist and progress rows. */
+/* Mini: left-anchored, as tall as the whole section's content. */
 .mini .art {
   position: static;
   grid-area: art;
@@ -211,11 +216,32 @@ body {
   gap: 8px;
 }
 
+/* Mini: fits the column right of the art down to 375 px screens (147 px). */
+.mini .transport {
+  gap: 0;
+}
+
+.mini .transport button {
+  width: 48px;
+}
+
+/* Mini: hidden. They keep their place (right edge), so they fade out fast,
+   before the sliding transport reaches them (~80 ms), and back in only at the
+   end of the switch, once it has left (~250 ms at 375 px). */
 .modes {
   grid-column: 3;
   justify-self: end;
   display: flex;
   gap: 1px;
+  transition: opacity 100ms var(--switch-ease) 250ms;
+}
+
+.mini .modes {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 80ms var(--switch-ease),
+    visibility 0s 80ms;
 }
 
 .controls button {
@@ -306,6 +332,9 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .playlist,
+  .mini .playlist,
+  .modes,
+  .mini .modes,
   .switch svg {
     transition: none;
   }

@@ -59,6 +59,7 @@ export function App() {
         <div class="controls">
           <div class="transport">
             <button
+              data-flip="move"
               aria-label="Previous"
               disabled={disabled}
               onClick={() => send("previous")}
@@ -67,6 +68,7 @@ export function App() {
             </button>
             <button
               class="toggle"
+              data-flip="move"
               aria-label={snapshot?.state === "play" ? "Pause" : "Play"}
               disabled={disabled}
               onClick={() => send("toggle")}
@@ -74,6 +76,7 @@ export function App() {
               <Icon path={snapshot?.state === "play" ? PAUSE : PLAY} />
             </button>
             <button
+              data-flip="move"
               aria-label="Next"
               disabled={disabled}
               onClick={() => send("next")}
