@@ -236,6 +236,7 @@ body {
 /* The bar's touch target: 44 px tall, spilling into the gaps above and below
    the row. Seeking is full mode only. */
 .seek {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -262,6 +263,30 @@ body {
 .dragging .track {
   height: 8px;
   border-radius: 4px;
+}
+
+/* Above the finger, exactly over the album line (12 px above the bar's 1rem
+   row, 1.125rem tall), so no text peeks out around it; kept within the bar's
+   ends. */
+.tip {
+  position: absolute;
+  bottom: calc(50% + 0.5rem + 10px);
+  left: clamp(24px, var(--at, 0%), calc(100% - 24px));
+  width: 48px;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  background: var(--bg);
+  line-height: 1.25rem;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transform: translateX(-50%);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.dragging .tip {
+  visibility: visible;
 }
 
 .fill {

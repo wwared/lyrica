@@ -267,6 +267,7 @@ function Progress({
   const track = useRef<HTMLDivElement>(null);
   const fill = useRef<HTMLDivElement>(null);
   const time = useRef<HTMLSpanElement>(null);
+  const tip = useRef<HTMLSpanElement>(null);
   const seek = useRef({
     /** Fraction of the bar under the pointer while dragging. */
     drag: null as number | null,
@@ -334,9 +335,14 @@ function Progress({
     }, SEEK_HOLD_MS);
     onSeek(seconds);
   };
-  const fraction = (e: PointerEvent) => {
+  /** Starts or continues a drag at the pointer. */
+  const dragTo = (e: PointerEvent) => {
     const r = track.current!.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    seek.current.drag = f;
+    tip.current!.textContent = `${Math.round(f * 100)}%`;
+    tip.current!.style.setProperty("--at", `${f * 100}%`);
+    paint.current();
   };
   const endDrag = (commit: boolean) => {
     const s = seek.current;
@@ -366,14 +372,11 @@ function Progress({
         onPointerDown={(e) => {
           if (!seekable || e.button !== 0) return;
           e.currentTarget.setPointerCapture(e.pointerId);
-          seek.current.drag = fraction(e);
+          dragTo(e);
           setDragging(true);
-          paint.current();
         }}
         onPointerMove={(e) => {
-          if (seek.current.drag === null) return;
-          seek.current.drag = fraction(e);
-          paint.current();
+          if (seek.current.drag !== null) dragTo(e);
         }}
         onPointerUp={() => endDrag(true)}
         onPointerCancel={() => endDrag(false)}
@@ -390,6 +393,7 @@ function Progress({
         <div class="track" data-flip="scale" ref={track}>
           <div class="fill" ref={fill} />
         </div>
+        <span class="tip" ref={tip} aria-hidden="true" />
       </div>
       <p class="time" data-flip="move">
         {/* Invisible, sizes the box: fits every time of this song, so
