@@ -17,9 +17,9 @@ Each item is one self-contained step. Order within a phase is the intended build
 
 ### Seeking
 
-1. **Seek protocol:** `seekcur` in `lyrica-mpd` (absolute and relative); `seek` (to a position) and relative seek commands in the WS protocol.
+1. **Seek protocol:** `seekcur` in `lyrica-mpd`; a `seek` command (to a position) in the WS protocol.
 2. **Seek on the progress bar:** tap or drag anywhere on the bar sets the position, with a touch target taller than the bar; the bar follows the finger while dragging and seeks on release.
-3. **Seek buttons:** backward / forward by a fixed step in the control strip. Step size and placement to decide (at 375 px the strip has no free room beside the transport).
+3. **Seek buttons (maybe):** backward / forward by 5 s (relative `seekcur`). Revisit once bar seeking is in use; they may be unnecessary. Placement open: the control strip has no free room at 375 px; one option is long-pressing previous / next to seek (or the reverse).
 
 ### Live queue
 
@@ -30,7 +30,7 @@ Read-only: no reordering, adding, removing or consume mode. The only way the que
 3. **Queue windows over the WS:** the client requests a position range; the server answers with those entries. Fetched off the idle connection so now playing never waits on it.
 4. **Virtual list:** the queue area becomes its own scroll container sized to the whole queue, rendering only the rows near the viewport, fixed row height.
 5. **Lazy loading while scrolling:** windows load ahead in both directions with enough margin that scrolling never shows missing rows; far-away windows are dropped.
-6. **Auto-centre:** opens centred on the current song and re-centres when it changes; leaves the user's scroll alone while they are scrolling.
+6. **Auto-centre:** opens centred on the current song and re-centres when it changes. Scrolling by the user pauses it; 15 s after scrolling stops it resumes and re-centres on the current song.
 7. **Auto-update:** idle on `playlist`; a new queue version invalidates loaded windows and reloads the visible ones.
 8. **Album grouping:** adjacent tracks from the same album form a group with a small separator.
 9. **Lazy cover art per group:** one cover per album group from the HTTP mirror, loaded only when visible, sharing the now-playing cover cache.
@@ -51,3 +51,11 @@ There is no app icon or favicon yet. No service worker or offline shell (caching
 1. **Icon artwork:** one design, exported at the sizes the manifest and iOS need.
 2. **Icon wiring:** manifest `icons`, `apple-touch-icon` and favicon.
 3. **Launch colour:** the manifest's `background_color` is fixed to the dark background; check what iOS shows while launching in light mode and match it.
+
+### Colour scheme
+
+Every colour is one of four CSS variables per light / dark scheme (background, foreground, muted, bar track), all greys, plus the `theme-color` meta tags and manifest colours, which repeat the backgrounds.
+
+1. **Gruvbox palette:** map the existing variables to gruvbox light and dark.
+2. **Accents:** gruvbox accent colours for highlights (on toggles, progress and volume fill, current queue track); exact use to iterate on.
+3. **Browser colours:** `theme-color` meta tags and manifest follow the palette.

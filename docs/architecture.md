@@ -54,17 +54,17 @@ UI direction (implemented parts are detailed under "Now playing"; the rest is pl
 - **Now playing, pinned to the bottom:** album art, title, artist, album, progress bar with the time beside it, then controls at the very bottom (previous, play/pause, next, with the play-here and volume toggles on the left and random/single/repeat toggles on the right). Every element has a fixed height so nothing moves when the song changes.
 - **Two modes, switched by a chevron:** full (large art above the title) and mini (art left of title/artist/album/progress/transport, the queue above). Always opens in full mode; the switch is animated, smooth and unflashy.
 - **Progress bar:** updates smoothly and continuously during playback. Each `state` message anchors `elapsed` to the local receive time (`performance.now()`); while `play`, the bar shows `elapsed + (now − anchor)`, clamped to `duration`, redrawn every animation frame. Re-anchored by every state push (seek, pause, song change) and by the fresh snapshot after a reconnect. No polling.
-- **Seeking (planned):** tap or drag on the progress bar seeks there (with a touch target taller than the bar, like the volume slider's); backward / forward buttons seek by a fixed step. Step size and where the buttons fit in the control strip are open.
+- **Seeking (planned):** tap or drag on the progress bar seeks there (with a touch target taller than the bar, like the volume slider's). Backward / forward buttons (5 s) only if bar seeking proves insufficient; placement open (no free room in the control strip; long-pressing previous / next is one option).
 - **Live queue (planned; the area above now playing in mini mode is a placeholder):** the current MPD queue, read-only: no reordering, adding, removing or consume mode.
   - Virtual list over the whole queue (200k entries): only rows near the viewport are rendered, with a fixed row height; entries are loaded in position windows on demand, far enough ahead in both directions that scrolling up or down never shows missing rows.
-  - Auto-centres on the current song when it opens and when the song changes, without fighting the user while they scroll; reloads when the queue changes (queue version).
+  - Auto-centres on the current song when it opens and when the song changes. Scrolling by the user pauses auto-centring; 15 s after scrolling stops it resumes and re-centres on the current song. Reloads when the queue changes (queue version).
   - Its own scroll container (`overflow-y: auto`), since the document never scrolls (see "Fixed viewport"), with `overscroll-behavior: contain` so its edge bounce doesn't chain to the page. Vertical panning stays allowed by the root `touch-action: pan-x pan-y`; don't set a narrower `touch-action` on it.
   - Adjacent tracks from the same album are visually grouped (small gap/separator), with one cover per group, loaded lazily when visible; no cover if the album has none.
   - Per-track info: album, album/track artist, title, track number. Exact layout to be iterated on.
   - Tapping a track plays it.
 - **Stored playlists (planned):** a dedicated button opens the list of server playlists; tapping one clears the queue and loads it. The only way lyrica changes the queue. No general settings menu.
 - Slow data (cover art, queue windows, playlist listings) is fetched lazily and asynchronously; controls and now playing never wait on it.
-- Light/dark mode follows the system preference.
+- Light/dark mode follows the system preference. Colours are greys from CSS variables now; a gruvbox-based palette with accent colours is planned.
 - **PWA:** installable from Safari (manifest, standalone display, iOS meta tags); no app icon yet. No service worker: the app needs the server and MPD to do anything, so offline launch is useless.
 
 ### Now playing (implemented)
