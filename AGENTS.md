@@ -17,6 +17,7 @@ Mobile-first PWA client for MPD, single user, very large library (~200k-song que
 - The MPD at `127.0.0.1:6600` is a real server with real data; its audio output is disabled. Allowed: read-only commands, playback control (`play`, `pause`, `stop`, `next`, `previous`, `seek`) and the random/repeat/single options; no need to restore them afterwards. Never change outputs, volume, consume, the queue, stored playlists or anything stored on disk.
 - Keep docs in `docs/` current when behavior or direction changes.
 - `git add` new files before running nix commands.
+- Before testing in headless Chromium, read "Testing the frontend" in `docs/development.md` and use its exact flags. `--password-store=basic` is mandatory: without it every page hangs blank.
 
 ## Writing style
 
