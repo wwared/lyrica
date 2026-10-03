@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import noCover from "./assets/no-cover.png";
 import { covers, findCover } from "./cover";
+import { Marquee } from "./marquee";
 import { formatTime, position } from "./progress";
 import { connect, type Command, type Connection, type Snapshot } from "./ws";
 
@@ -27,15 +28,11 @@ export function App() {
     <main class="app">
       <section class="now-playing">
         <Art folder={snapshot?.folder ?? null} />
-        {/* Keyed so a new song starts scrolled back to the beginning. */}
-        <h1
-          key={heading}
-          class={snapshot?.title ? "line title" : "line title placeholder"}
-        >
-          {heading}
+        <h1 class={snapshot?.title ? "title" : "title placeholder"}>
+          <Marquee text={heading} />
         </h1>
-        <p key={snapshot?.artist} class="line artist">
-          {snapshot?.artist}
+        <p class="artist">
+          <Marquee text={snapshot?.artist ?? ""} />
         </p>
         <Progress snapshot={snapshot} />
         <div class="controls">

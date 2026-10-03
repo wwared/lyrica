@@ -76,16 +76,14 @@ body {
   object-fit: contain;
 }
 
-/* One line; long text scrolls sideways instead of wrapping. */
-.line {
-  overflow-x: auto;
-  overflow-y: hidden;
+.marquee {
+  overflow: hidden;
   white-space: nowrap;
-  scrollbar-width: none;
 }
 
-.line::-webkit-scrollbar {
-  display: none;
+/* Inline boxes ignore transforms. */
+.marquee > span {
+  display: inline-block;
 }
 
 .title {
