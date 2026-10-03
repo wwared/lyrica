@@ -43,26 +43,31 @@
   box-sizing: border-box;
 }
 
+/* iOS home-screen apps (WebKit bug 254868) report `100dvh` short by
+   `safe-area-inset-top`, leaving a gap at the bottom; there `100vh` is the
+   full screen (no browser toolbar). `.standalone` is set by index.html. */
+:root {
+  --app-height: 100dvh;
+}
+
+:root.standalone {
+  --app-height: 100vh;
+}
+
 html,
 body {
   margin: 0;
-  height: 100%;
   background: var(--bg);
   color: var(--fg);
   /* App-like fixed viewport: no rubber-band bounce, overscroll stretch,
      pull-to-refresh or zoom. Scrolling lists scroll inside their own
      containers. `touch-action` because iOS ignores `user-scalable=no`; it
-     also applies to descendants. */
+     also applies to descendants. No `height: 100%` or `position: fixed`:
+     in iOS home-screen apps both resolve to the short viewport and clip the
+     bottom of `.app`. */
   overflow: hidden;
   overscroll-behavior: none;
   touch-action: pan-x pan-y;
-}
-
-/* iOS rubber-bands the document even when it doesn't overflow and ignores
-   `overflow: hidden` on body; a fixed body leaves nothing to drag. */
-body {
-  position: fixed;
-  inset: 0;
 }
 
 /* Positioned: contains the full-mode art. */
@@ -70,7 +75,7 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: var(--app-height);
   /* Mode switch: full-width rows start at their mini-mode offset, past the
      right edge; without clipping, desktop browsers flash a scrollbar. */
   overflow: clip;
@@ -115,7 +120,7 @@ body {
   --full-art: min(
     100vw,
     600px,
-    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+    var(--app-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
       var(--section) - 40px
   );
   display: grid;

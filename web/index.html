@@ -25,6 +25,11 @@
     />
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>lyrica</title>
+    <script>
+      // iOS home-screen app; see --app-height in style.css.
+      if (navigator.standalone)
+        document.documentElement.classList.add("standalone");
+    </script>
   </head>
   <body>
     <div id="app"></div>
