@@ -4,12 +4,32 @@ const RETRY_MS = 1000;
 
 type Stream = { start(url: string): void; stop(): void };
 
+/** What the lock screen and Control Center show while the stream plays. */
+export type NowPlaying = {
+  title: string;
+  artist: string;
+  /** Absolute URL; `undefined` shows none. */
+  artwork: string | undefined;
+};
+
+function show({ title, artist, artwork }: NowPlaying) {
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title,
+    artist,
+    artwork: artwork === undefined ? [] : [{ src: artwork }],
+  });
+}
+
 /**
  * MPD's `httpd` output, played by a detached `Audio` (no controls on the
  * page). The stream is live: `stop` unloads it, closing the connection, and
  * `start` opens a new one, so audio never resumes from a stale buffer.
  */
-function createStream(onChange: (on: boolean) => void): Stream {
+function createStream(
+  onChange: (on: boolean) => void,
+  onPlaying: () => void,
+): Stream {
   const audio = new Audio();
   let url: string | null = null;
   let last: string | null = null;
@@ -56,6 +76,7 @@ function createStream(onChange: (on: boolean) => void): Stream {
   audio.addEventListener("pause", () => {
     if (!audio.ended) stop();
   });
+  audio.addEventListener("playing", onPlaying);
 
   if ("mediaSession" in navigator) {
     navigator.mediaSession.setActionHandler("play", () => {
@@ -68,11 +89,22 @@ function createStream(onChange: (on: boolean) => void): Stream {
   return { start, stop };
 }
 
-/** Whether the stream at `url` is playing here, and a toggle for it. */
-export function useStream(url: string | null): [boolean, () => void] {
+/**
+ * Whether the stream at `url` is playing here, and a toggle for it. `info`
+ * is kept current in the Media Session.
+ */
+export function useStream(
+  url: string | null,
+  info: NowPlaying,
+): [boolean, () => void] {
   const [on, setOn] = useState(false);
+  const latest = useRef(info);
+  latest.current = info;
   const stream = useRef<Stream | null>(null);
-  stream.current ??= createStream(setOn);
+  // Also set again when playback (re)starts, in case the browser drops
+  // metadata set while nothing was playing.
+  stream.current ??= createStream(setOn, () => show(latest.current));
+  useEffect(() => show(info), [info.title, info.artist, info.artwork]);
   useEffect(() => {
     if (url === null) stream.current?.stop();
   }, [url]);

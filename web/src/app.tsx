@@ -16,7 +16,6 @@ export function App() {
     connection.current = c;
     return () => c.close();
   }, []);
-  const [listening, toggleListening] = useStream(streamUrl);
 
   const send = (command: Command) => connection.current?.send(command);
   const offline = snapshot?.state === "offline";
@@ -27,6 +26,16 @@ export function App() {
       : offline
         ? "Offline"
         : (snapshot.title ?? "Nothing playing");
+  const cover = useCover(snapshot === null ? undefined : snapshot.folder);
+  const [listening, toggleListening] = useStream(streamUrl, {
+    title: heading,
+    artist: snapshot?.artist ?? "",
+    // Left out while unknown, so the lock screen never flashes the placeholder.
+    artwork:
+      cover === undefined
+        ? undefined
+        : new URL(cover ?? noCover, location.href).href,
+  });
   const [mini, setMini] = useState(false);
   const nowPlaying = useRef<HTMLElement>(null);
   const capture = useFlip(nowPlaying, mini);
@@ -37,7 +46,7 @@ export function App() {
         <p class="placeholder">Playlist</p>
       </section>
       <section class="now-playing" ref={nowPlaying}>
-        <Art folder={snapshot === null ? undefined : snapshot.folder} />
+        <Art cover={cover} />
         <h1
           class={snapshot?.title ? "title" : "title placeholder"}
           data-flip="move"
@@ -172,12 +181,12 @@ function useFlip(root: RefObject<HTMLElement | null>, key: unknown) {
 }
 
 /**
- * `folder` is `undefined` before the first snapshot. While the cover is
- * unknown the square stays empty (background only); then the cover, or the
- * placeholder when there is none. Same folder, same image: a track change
- * within an album changes nothing.
+ * The cover URL for `folder`, `null` for none (placeholder), `undefined`
+ * while unknown (probing, or before the first snapshot: `folder` is
+ * `undefined`). Same folder, same result: a track change within an album
+ * changes nothing.
  */
-function Art({ folder }: { folder: string | null | undefined }) {
+function useCover(folder: string | null | undefined) {
   // Only triggers the re-render; the result itself is read from `covers`.
   const [, setProbed] = useState<string | null>(null);
   useEffect(() => {
@@ -190,13 +199,15 @@ function Art({ folder }: { folder: string | null | undefined }) {
       current = false;
     };
   }, [folder]);
+  return folder === undefined
+    ? undefined
+    : folder === null
+      ? null
+      : covers.get(folder);
+}
 
-  const cover =
-    folder === undefined
-      ? undefined
-      : folder === null
-        ? null
-        : covers.get(folder);
+/** While the cover is unknown the square stays empty (background only). */
+function Art({ cover }: { cover: string | null | undefined }) {
   return (
     <div class="art" data-flip="scale">
       {cover !== undefined && <img src={cover ?? noCover} alt="" />}
