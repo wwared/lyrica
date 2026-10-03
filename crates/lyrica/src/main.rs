@@ -38,6 +38,11 @@ struct Args {
     #[arg(long)]
     music_url: Option<String>,
 
+    /// URL of MPD's `httpd` output; enables in-browser playback, streamed by
+    /// the browser directly.
+    #[arg(long)]
+    stream_url: Option<String>,
+
     /// Log filter, in tracing-subscriber `EnvFilter` syntax.
     #[arg(long, default_value = "info")]
     log: String,
@@ -71,6 +76,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_state(ws::Bridge {
             snapshots,
             commands,
+            config: ws::config_message(args.stream_url.as_deref()).into(),
         });
 
     let listener = tokio::net::TcpListener::bind(args.listen).await?;

@@ -1,7 +1,7 @@
 //! Frontend WebSocket endpoint: pushes the player state, accepts commands.
 //! Protocol: `docs/architecture.md` → "MPD bridge".
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use axum::{
     extract::{
@@ -10,6 +10,7 @@ use axum::{
     },
     response::Response,
 };
+use serde::Serialize;
 use tokio::sync::{mpsc, watch};
 
 use crate::bridge::{Command, Snapshot};
@@ -18,6 +19,18 @@ use crate::bridge::{Command, Snapshot};
 pub struct Bridge {
     pub snapshots: watch::Receiver<Snapshot>,
     pub commands: mpsc::Sender<Command>,
+    /// `config` message, sent first on every connection.
+    pub config: Arc<str>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum ServerMessage<'a> {
+    Config { stream: Option<&'a str> },
+}
+
+pub fn config_message(stream: Option<&str>) -> String {
+    serde_json::to_string(&ServerMessage::Config { stream }).expect("config message serializes")
 }
 
 pub async fn upgrade(ws: WebSocketUpgrade, State(bridge): State<Bridge>) -> Response {
@@ -25,6 +38,9 @@ pub async fn upgrade(ws: WebSocketUpgrade, State(bridge): State<Bridge>) -> Resp
 }
 
 async fn handle(mut socket: WebSocket, mut bridge: Bridge) {
+    if socket.send(Message::text(&*bridge.config)).await.is_err() {
+        return;
+    }
     bridge.snapshots.mark_changed();
     loop {
         tokio::select! {
@@ -51,5 +67,23 @@ async fn handle(mut socket: WebSocket, mut bridge: Bridge) {
                 Some(Err(_)) | None => return,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_message_carries_the_stream_url() {
+        let json = |s| serde_json::from_str::<serde_json::Value>(&config_message(s)).unwrap();
+        assert_eq!(
+            json(Some("https://s/")),
+            serde_json::json!({"type": "config", "stream": "https://s/"})
+        );
+        assert_eq!(
+            json(None),
+            serde_json::json!({"type": "config", "stream": null})
+        );
     }
 }

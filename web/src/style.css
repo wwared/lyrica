@@ -260,23 +260,29 @@ body {
   width: 48px;
 }
 
-/* Mini: hidden. They keep their place (right edge), so they fade out fast,
-   before the sliding transport reaches them (~80 ms), and back in only at the
-   end of the switch, once it has left (~250 ms at 375 px). */
+/* Mini: hidden. They keep their place (left and right edges), so they fade
+   out fast, before the sliding transport and art reach them (~80 ms), and
+   back in only at the end of the switch, once they have left (~250 ms at
+   375 px). */
+.listen,
 .modes {
-  grid-column: 3;
-  justify-self: end;
-  display: flex;
-  gap: 1px;
   transition: opacity 100ms var(--switch-ease) 250ms;
 }
 
+.mini .listen,
 .mini .modes {
   opacity: 0;
   visibility: hidden;
   transition:
     opacity 80ms var(--switch-ease),
     visibility 0s 80ms;
+}
+
+.modes {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  gap: 1px;
 }
 
 .controls button {
@@ -331,6 +337,25 @@ body {
   height: 20px;
 }
 
+/* The icon lines up with the start of the progress bar. */
+.controls .listen {
+  grid-column: 1;
+  justify-self: start;
+  width: 44px;
+  height: 44px;
+  margin-left: -10px;
+  color: var(--muted);
+}
+
+.controls .listen[aria-pressed="true"] {
+  color: var(--fg);
+}
+
+.listen svg {
+  width: 24px;
+  height: 24px;
+}
+
 /* Top right of the mini box in both modes, so it never moves: a 44 px target
    over a 24 px column, centred on the title line. */
 .switch {
@@ -368,6 +393,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .playlist,
   .mini .playlist,
+  .listen,
+  .mini .listen,
   .modes,
   .mini .modes,
   .switch svg {

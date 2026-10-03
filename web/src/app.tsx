@@ -4,16 +4,19 @@ import noCover from "./assets/no-cover.png";
 import { covers, findCover } from "./cover";
 import { Marquee } from "./marquee";
 import { formatTime, position } from "./progress";
+import { useStream } from "./stream";
 import { connect, type Command, type Connection, type Snapshot } from "./ws";
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const connection = useRef<Connection | null>(null);
   useEffect(() => {
-    const c = connect(setSnapshot);
+    const c = connect(setSnapshot, (config) => setStreamUrl(config.stream));
     connection.current = c;
     return () => c.close();
   }, []);
+  const [listening, toggleListening] = useStream(streamUrl);
 
   const send = (command: Command) => connection.current?.send(command);
   const offline = snapshot?.state === "offline";
@@ -57,6 +60,16 @@ export function App() {
         <Progress snapshot={snapshot} />
         {/* Three columns so the transport stays centred whatever is beside it. */}
         <div class="controls">
+          {streamUrl !== null && (
+            <button
+              class="listen"
+              aria-label="Play here"
+              aria-pressed={listening}
+              onClick={toggleListening}
+            >
+              <Icon path={HEADPHONES} />
+            </button>
+          )}
           <div class="transport">
             <button
               data-flip="move"
@@ -233,6 +246,9 @@ const PAUSE = "M6 5h4v14H6zM14 5h4v14h-4z";
 const NEXT = "M16 6h2v12h-2zM6 18l8.5-6L6 6z";
 // Material Icons (Apache 2.0): expand_more; points up (rotated) in mini mode.
 const EXPAND = "M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z";
+// Material Icons (Apache 2.0): headphones.
+const HEADPHONES =
+  "M12 3c-4.97 0-9 4.03-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7c0-4.97-4.03-9-9-9z";
 // Material Icons (Apache 2.0): shuffle, looks_one (outlined), repeat.
 const MODES = [
   {

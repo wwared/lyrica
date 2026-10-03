@@ -15,6 +15,12 @@ export type Snapshot = {
   at: number;
 };
 
+/** Sent first on every connection. */
+export type Config = {
+  /** URL of MPD's `httpd` output, `null` when not configured. */
+  stream: string | null;
+};
+
 /** `random`, `repeat` and `single` toggle the mode. */
 export type Command =
   "previous" | "toggle" | "next" | "random" | "repeat" | "single";
@@ -28,7 +34,10 @@ export type Connection = {
 const RETRY_MS = 1000;
 
 /** Keeps a socket to the server open, reconnecting on drops. */
-export function connect(onSnapshot: (snapshot: Snapshot) => void): Connection {
+export function connect(
+  onSnapshot: (snapshot: Snapshot) => void,
+  onConfig: (config: Config) => void,
+): Connection {
   // Relative so it works under a reverse-proxy path prefix.
   const url = new URL("ws", location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -39,8 +48,9 @@ export function connect(onSnapshot: (snapshot: Snapshot) => void): Connection {
   const open = () => {
     socket = new WebSocket(url);
     socket.onmessage = (event) => {
-      const snapshot = parse(event.data, performance.now());
-      if (snapshot) onSnapshot(snapshot);
+      const message = parse(event.data, performance.now());
+      if (message && "stream" in message) onConfig(message);
+      else if (message) onSnapshot(message);
     };
     socket.onclose = () => {
       onSnapshot({
@@ -88,7 +98,7 @@ export function connect(onSnapshot: (snapshot: Snapshot) => void): Connection {
   };
 }
 
-function parse(data: unknown, at: number): Snapshot | undefined {
+function parse(data: unknown, at: number): Snapshot | Config | undefined {
   if (typeof data !== "string") return;
   let message;
   try {
@@ -96,6 +106,7 @@ function parse(data: unknown, at: number): Snapshot | undefined {
   } catch {
     return;
   }
+  if (message?.type === "config") return { stream: message.stream };
   if (message?.type !== "state") return;
   const { state, title, artist, folder, elapsed, duration } = message;
   const { random, repeat, single } = message;

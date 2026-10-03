@@ -18,7 +18,7 @@ To test connection loss, run lyrica against a proxy and kill it, never MPD itsel
 
 ## Testing the frontend
 
-Run the server (`cargo run -p lyrica -- --music-url https://webmusic.wwared.com/`, defaults to MPD at `127.0.0.1:6600` and HTTP on `127.0.0.1:8080`; drop `--music-url` to test without album art) and either `npm run dev` in `web/` (proxies `/ws` to it) or `npm run build` (served by the debug server without recompiling).
+Run the server (`cargo run -p lyrica -- --music-url https://webmusic.wwared.com/ --stream-url https://music.wwared.com/`, defaults to MPD at `127.0.0.1:6600` and HTTP on `127.0.0.1:8080`; drop `--music-url` to test without album art, `--stream-url` without the play-here toggle) and either `npm run dev` in `web/` (proxies `/ws` to it) or `npm run build` (served by the debug server without recompiling). `music.wwared.com` is a different MPD's `httpd` output (the local MPD has none), so its audio doesn't match the local state.
 
 Headless Chromium (`nix shell nixpkgs#chromium`) needs `--headless=new --no-sandbox --password-store=basic --use-mock-keychain --remote-debugging-port=9333`; drive it over CDP. Without `--password-store=basic`, navigation hangs (`Page.navigate` never returns, pages stay blank). Useful CDP calls: `Emulation.setDeviceMetricsOverride` (390×844, `mobile: true`) for the iPhone viewport, `Runtime.evaluate` to read the DOM and click, `Page.setWebLifecycleState` (`frozen` then `active`) or `Emulation.setFocusEmulationEnabled` plus dispatching `visibilitychange` to simulate the page being hidden and shown. A Bun or Node WebSocket client is handy for raw protocol checks.
 
@@ -67,6 +67,7 @@ services.lyrica = {
     listen = "127.0.0.1:8080"; # default; point the reverse proxy here
     mpd = "127.0.0.1:6600"; # default
     music-url = "https://music.example.com";
+    stream-url = "https://stream.example.com";
   };
   environmentFile = "/run/secrets/lyrica"; # LYRICA_MPD_PASSWORD=...
 };

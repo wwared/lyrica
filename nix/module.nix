@@ -51,6 +51,11 @@ in
             default = null;
             description = "Base URL of an HTTP mirror of MPD's music directory; enables album art.";
           };
+          stream-url = mkOption {
+            type = with types; nullOr str;
+            default = null;
+            description = "URL of MPD's httpd output; enables in-browser playback.";
+          };
         };
       };
     };
