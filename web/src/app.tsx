@@ -6,6 +6,7 @@ import { Marquee } from "./marquee";
 import { formatTime, position } from "./progress";
 import { useStream } from "./stream";
 import { Volume } from "./volume";
+import { useWakeLock } from "./wake";
 import { connect, type Command, type Connection, type Snapshot } from "./ws";
 
 export function App() {
@@ -17,6 +18,7 @@ export function App() {
     connection.current = c;
     return () => c.close();
   }, []);
+  useWakeLock();
 
   const send = (command: Command) => connection.current?.send(command);
   const offline = snapshot?.state === "offline";
