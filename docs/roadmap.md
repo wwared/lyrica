@@ -4,10 +4,10 @@ Work proceeds bottom-up in small steps, each usable on its own. Design details l
 
 ## Current state
 
-Now playing is done apart from seeking. The queue area above it (mini mode) is an empty placeholder, there are no stored playlists, and the PWA has no icon.
+Now playing is done, including seeking on the bar in full mode. The queue area above it (mini mode) is an empty placeholder, there are no stored playlists, and the PWA has no icon.
 
 - **Foundation:** Nix flake (dev shell, build, fmt, check, NixOS module); `lyrica-mpd` with the commands now playing needs; server bridging WebSocket clients to MPD (idle and command connections, reconnect with backoff, offline state); frontend embedded in the binary.
-- **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
+- **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
 - **Play here:** plays MPD's `httpd` stream in the browser, with title, artist, album and cover on the lock screen.
 - **iOS fit:** fixed viewport (no bounce, no zoom, no selection), full height in home-screen apps, safe areas, light / dark mode.
 
@@ -15,11 +15,9 @@ Now playing is done apart from seeking. The queue area above it (mini mode) is a
 
 Each item is one self-contained step. Order within a phase is the intended build order.
 
-### Seeking
+### Seek buttons (maybe)
 
-1. **Seek protocol:** `seekcur` in `lyrica-mpd`; a `seek` command (to a position) in the WS protocol.
-2. **Seek on the progress bar:** tap or drag anywhere on the bar sets the position, with a touch target taller than the bar; the bar follows the finger while dragging and seeks on release.
-3. **Seek buttons (maybe):** backward / forward by 5 s (relative `seekcur`). Revisit once bar seeking is in use; they may be unnecessary. Placement open: the control strip has no free room at 375 px; one option is long-pressing previous / next to seek (or the reverse).
+Backward / forward by 5 s (relative `seekcur`). Revisit once bar seeking has been in use; they may be unnecessary. Placement open: the control strip has no free room at 375 px; one option is long-pressing previous / next to seek (or the reverse).
 
 ### Live queue
 

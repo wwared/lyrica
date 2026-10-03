@@ -73,7 +73,15 @@ export function App() {
         <p class="album" data-flip="move">
           <Marquee text={snapshot?.album ?? ""} />
         </p>
-        <Progress snapshot={snapshot} />
+        <Progress
+          snapshot={snapshot}
+          seekable={
+            !mini &&
+            (snapshot?.state === "play" || snapshot?.state === "pause") &&
+            !!snapshot.duration
+          }
+          onSeek={(position) => send({ type: "seek", position })}
+        />
         {/* Three columns so the transport stays centred whatever is beside it. */}
         <div class={streamUrl === null ? "controls" : "controls stream"}>
           <div class="extras">
@@ -236,46 +244,169 @@ function Art({ cover }: { cover: string | null | undefined }) {
   );
 }
 
-/** Drawn outside Preact: per-frame re-renders would be wasted work. */
-function Progress({ snapshot }: { snapshot: Snapshot | null }) {
+// After a seek, the position sent stays shown until the next state push, so
+// the bar doesn't jump back meanwhile; at most this long (MPD rejected it).
+const SEEK_HOLD_MS = 1000;
+const SEEK_STEP = 5;
+
+/**
+ * Drawn outside Preact: per-frame re-renders would be wasted work. While
+ * `seekable`, tap or drag on the bar: it follows the pointer and seeks on
+ * release.
+ */
+function Progress({
+  snapshot,
+  seekable,
+  onSeek,
+}: {
+  snapshot: Snapshot | null;
+  seekable: boolean;
+  onSeek: (position: number) => void;
+}) {
+  const slider = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
   const fill = useRef<HTMLDivElement>(null);
   const time = useRef<HTMLSpanElement>(null);
+  const seek = useRef({
+    /** Fraction of the bar under the pointer while dragging. */
+    drag: null as number | null,
+    /** The position sent, anchored like a snapshot's `elapsed`. */
+    sent: null as { elapsed: number; at: number } | null,
+    hold: 0,
+    /** Seconds last drawn. */
+    shown: null as number | null,
+  });
+  const paint = useRef(() => {});
+  const [dragging, setDragging] = useState(false);
+  const duration = snapshot?.duration ?? null;
 
   useLayoutEffect(() => {
+    const s = seek.current;
+    s.sent = null;
     let frame = 0;
-    let shown: string | null = null;
+    let text: string | null = null;
     const draw = () => {
-      const seconds = snapshot && position(snapshot, performance.now());
-      const duration = snapshot?.duration ?? null;
+      const seconds =
+        snapshot === null
+          ? null
+          : s.drag !== null && duration
+            ? s.drag * duration
+            : position(
+                s.sent ? { ...snapshot, ...s.sent } : snapshot,
+                performance.now(),
+              );
+      s.shown = seconds;
       const ratio = seconds !== null && duration ? seconds / duration : 0;
       fill.current!.style.transform = `scaleX(${ratio})`;
-      const text =
+      const next =
         seconds === null
           ? ""
           : duration === null
             ? formatTime(seconds)
             : `${formatTime(seconds)} / ${formatTime(duration)}`;
-      if (text !== shown) time.current!.textContent = shown = text;
-      if (snapshot?.state === "play") frame = requestAnimationFrame(draw);
+      if (next === text) return;
+      time.current!.textContent = text = next;
+      slider.current!.setAttribute(
+        "aria-valuenow",
+        String(Math.floor(seconds ?? 0)),
+      );
+      slider.current!.setAttribute("aria-valuetext", next);
     };
-    draw();
+    const loop = () => {
+      draw();
+      frame = requestAnimationFrame(loop);
+    };
+    paint.current = draw;
+    if (snapshot?.state === "play") loop();
+    else draw();
     return () => cancelAnimationFrame(frame);
   }, [snapshot]);
 
+  useEffect(() => () => window.clearTimeout(seek.current.hold), []);
+
+  const send = (seconds: number) => {
+    const s = seek.current;
+    s.sent = { elapsed: seconds, at: performance.now() };
+    window.clearTimeout(s.hold);
+    s.hold = window.setTimeout(() => {
+      s.sent = null;
+      paint.current();
+    }, SEEK_HOLD_MS);
+    onSeek(seconds);
+  };
+  const fraction = (e: PointerEvent) => {
+    const r = track.current!.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  };
+  const endDrag = (commit: boolean) => {
+    const s = seek.current;
+    if (s.drag === null) return;
+    if (commit && seekable && duration) send(s.drag * duration);
+    s.drag = null;
+    setDragging(false);
+    paint.current();
+  };
+
+  // E.g. switching to mini mode mid-drag.
+  useEffect(() => {
+    if (!seekable) endDrag(false);
+  }, [seekable]);
+
   return (
     <div class="progress">
-      <div class="track" data-flip="scale">
-        <div class="fill" ref={fill} />
+      <div
+        class={dragging ? "seek dragging" : "seek"}
+        ref={slider}
+        role="slider"
+        tabIndex={seekable ? 0 : -1}
+        aria-label="Position"
+        aria-valuemin={0}
+        aria-valuemax={duration ?? undefined}
+        aria-disabled={!seekable}
+        onPointerDown={(e) => {
+          if (!seekable || e.button !== 0) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          seek.current.drag = fraction(e);
+          setDragging(true);
+          paint.current();
+        }}
+        onPointerMove={(e) => {
+          if (seek.current.drag === null) return;
+          seek.current.drag = fraction(e);
+          paint.current();
+        }}
+        onPointerUp={() => endDrag(true)}
+        onPointerCancel={() => endDrag(false)}
+        onKeyDown={(e) => {
+          const step = SEEK_KEYS[e.key];
+          const shown = seek.current.shown;
+          if (!seekable || !duration || step === undefined || shown === null)
+            return;
+          e.preventDefault();
+          send(Math.min(duration, Math.max(0, shown + step)));
+          paint.current();
+        }}
+      >
+        <div class="track" data-flip="scale" ref={track}>
+          <div class="fill" ref={fill} />
+        </div>
       </div>
       <p class="time" data-flip="move">
         {/* Invisible, sizes the box: fits every time of this song, so
             ticking never resizes the bar. */}
-        <span aria-hidden="true">{timeSizer(snapshot?.duration ?? null)}</span>
+        <span aria-hidden="true">{timeSizer(duration)}</span>
         <span ref={time} />
       </p>
     </div>
   );
 }
+
+const SEEK_KEYS: Record<string, number> = {
+  ArrowLeft: -SEEK_STEP,
+  ArrowDown: -SEEK_STEP,
+  ArrowRight: SEEK_STEP,
+  ArrowUp: SEEK_STEP,
+};
 
 /** The widest `formatTime` pair for `duration`: digits are tabular. */
 function timeSizer(duration: number | null) {

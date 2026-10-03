@@ -24,10 +24,14 @@ export type Config = {
   stream: string | null;
 };
 
-/** `random`, `repeat` and `single` toggle the mode; `volume` sets MPD's. */
+/**
+ * `random`, `repeat` and `single` toggle the mode; `volume` sets MPD's;
+ * `seek` jumps to `position` seconds in the current song.
+ */
 export type Command =
   | { type: "previous" | "toggle" | "next" | "random" | "repeat" | "single" }
-  | { type: "volume"; volume: number };
+  | { type: "volume"; volume: number }
+  | { type: "seek"; position: number };
 
 export type Connection = {
   /** Dropped unless the socket is open. */

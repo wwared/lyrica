@@ -140,7 +140,8 @@ impl Snapshot {
 }
 
 /// Client → server message. `random`, `repeat` and `single` toggle the mode;
-/// `volume` sets MPD's volume.
+/// `volume` sets MPD's volume; `seek` jumps to `position` seconds in the
+/// current song.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Command {
@@ -150,7 +151,17 @@ pub enum Command {
     Random,
     Repeat,
     Single,
-    Volume { volume: u8 },
+    Volume {
+        volume: u8,
+    },
+    Seek {
+        #[serde(deserialize_with = "seconds")]
+        position: Duration,
+    },
+}
+
+fn seconds<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
+    Duration::try_from_secs_f64(f64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
 }
 
 /// Keeps `snapshots` current, reconnecting with backoff while MPD is
@@ -274,6 +285,7 @@ enum Action {
     Repeat(bool),
     Single(Single),
     Volume(u8),
+    Seek(Duration),
 }
 
 impl Action {
@@ -292,6 +304,7 @@ impl Action {
             (Command::Single, _) if snapshot.single => Action::Single(Single::Off),
             (Command::Single, _) => Action::Single(Single::On),
             (Command::Volume { volume }, _) => Action::Volume(volume),
+            (Command::Seek { position }, _) => Action::Seek(position),
         })
     }
 
@@ -305,6 +318,7 @@ impl Action {
             Action::Repeat(on) => client.repeat(on).await,
             Action::Single(mode) => client.single(mode).await,
             Action::Volume(volume) => client.set_volume(volume).await,
+            Action::Seek(position) => client.seek_current(position).await,
         }
     }
 }
@@ -396,6 +410,17 @@ mod tests {
         assert_eq!(action(Command::Single, &snapshot), "Some(Single(Off))");
         snapshot.state = PlayState::Offline;
         assert_eq!(action(Command::Random, &snapshot), "None");
+    }
+
+    #[test]
+    fn seek_takes_non_negative_seconds() {
+        let parse = |json| serde_json::from_str::<Command>(json).map(|c| format!("{c:?}"));
+        assert_eq!(
+            parse(r#"{"type":"seek","position":83.25}"#).unwrap(),
+            "Seek { position: 83.25s }"
+        );
+        assert!(parse(r#"{"type":"seek","position":-1}"#).is_err());
+        assert!(parse(r#"{"type":"seek","position":1e300}"#).is_err());
     }
 
     #[test]

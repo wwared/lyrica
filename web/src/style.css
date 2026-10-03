@@ -233,6 +233,22 @@ body {
   height: 1rem;
 }
 
+/* The bar's touch target: 44 px tall, spilling into the gaps above and below
+   the row. Seeking is full mode only. */
+.seek {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  margin: -14px 0;
+}
+
+.seek:not([aria-disabled="true"]) {
+  touch-action: none;
+  cursor: pointer;
+}
+
 .track {
   flex: 1;
   min-width: 0;
@@ -240,6 +256,12 @@ body {
   border-radius: 2px;
   background: var(--track);
   overflow: hidden;
+  transition: height 100ms var(--switch-ease);
+}
+
+.dragging .track {
+  height: 8px;
+  border-radius: 4px;
 }
 
 .fill {
@@ -523,6 +545,7 @@ body {
   .volume.open,
   .modes,
   .mini .modes,
+  .track,
   .switch svg {
     transition: none;
   }

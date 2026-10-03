@@ -1,4 +1,4 @@
-use std::{fmt, io};
+use std::{fmt, io, time::Duration};
 
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -112,6 +112,12 @@ impl Client {
     /// `volume` 0–100 (MPD rejects more).
     pub async fn set_volume(&mut self, volume: u8) -> Result<()> {
         self.run("setvol", &[&volume.to_string()]).await.map(drop)
+    }
+
+    /// Seeks to `position` in the current song. MPD rejects it while stopped.
+    pub async fn seek_current(&mut self, position: Duration) -> Result<()> {
+        let seconds = format!("{:.3}", position.as_secs_f64());
+        self.run("seekcur", &[&seconds]).await.map(drop)
     }
 
     /// Waits until one of `subsystems` (all if empty) changes. Blocks the
@@ -244,6 +250,7 @@ mod tests {
             ("repeat \"0\"\n", "OK\n"),
             ("single \"oneshot\"\n", "OK\n"),
             ("setvol \"55\"\n", "OK\n"),
+            ("seekcur \"83.250\"\n", "OK\n"),
         ])
         .await;
         let mut client = Client::connect(addr).await.unwrap();
@@ -259,6 +266,10 @@ mod tests {
         client.repeat(false).await.unwrap();
         client.single(Single::Oneshot).await.unwrap();
         client.set_volume(55).await.unwrap();
+        client
+            .seek_current(Duration::from_millis(83_250))
+            .await
+            .unwrap();
         drop(client);
         server.await.unwrap();
     }
