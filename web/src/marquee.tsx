@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from "preact/hooks";
 
 const PAUSE_MS = 1000;
-const PX_PER_S = 40;
+const PX_PER_S = 50;
 
 /**
  * One line of text. If it is too wide, it waits, scrolls until its end is
