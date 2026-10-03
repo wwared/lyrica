@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use lyrica_mpd::{Client, Error, Result, Song, State, Subsystem};
+use lyrica_mpd::{Client, Error, Result, Single, Song, State, Subsystem};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
@@ -65,6 +65,10 @@ pub struct Snapshot {
     pub folder: Option<String>,
     pub elapsed: Option<Duration>,
     pub duration: Option<Duration>,
+    pub random: bool,
+    pub repeat: bool,
+    /// Also on for MPD's `oneshot`.
+    pub single: bool,
     /// When `elapsed` was read, so clients that subscribe later still get
     /// the current position.
     pub at: Instant,
@@ -80,6 +84,9 @@ enum ServerMessage<'a> {
         folder: Option<&'a str>,
         elapsed: Option<f64>,
         duration: Option<f64>,
+        random: bool,
+        repeat: bool,
+        single: bool,
     },
 }
 
@@ -92,6 +99,9 @@ impl Snapshot {
             folder: None,
             elapsed: None,
             duration: None,
+            random: false,
+            repeat: false,
+            single: false,
             at: Instant::now(),
         }
     }
@@ -112,18 +122,24 @@ impl Snapshot {
             folder: self.folder.as_deref(),
             elapsed: elapsed.map(|e| e.as_secs_f64()),
             duration: self.duration.map(|d| d.as_secs_f64()),
+            random: self.random,
+            repeat: self.repeat,
+            single: self.single,
         };
         serde_json::to_string(&message).expect("state message serializes")
     }
 }
 
-/// Client → server message.
+/// Client → server message. `random`, `repeat` and `single` toggle the mode.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Command {
     Previous,
     Toggle,
     Next,
+    Random,
+    Repeat,
+    Single,
 }
 
 /// Keeps `snapshots` current, reconnecting with backoff while MPD is
@@ -161,7 +177,9 @@ async fn watch_player(
 ) -> Result<Infallible> {
     loop {
         snapshots.send_replace(fetch(&mut client, music_url).await?);
-        client.idle(&[Subsystem::Player]).await?;
+        client
+            .idle(&[Subsystem::Player, Subsystem::Options])
+            .await?;
     }
 }
 
@@ -180,6 +198,9 @@ async fn fetch(client: &mut Client, music_url: Option<&str>) -> Result<Snapshot>
             .and_then(|(m, s)| folder(m, &s.file)),
         title: song.map(title),
         elapsed: status.elapsed,
+        random: status.random,
+        repeat: status.repeat,
+        single: status.single != Single::Off,
         at,
     })
 }
@@ -217,8 +238,8 @@ pub async fn execute_commands(
 ) {
     let mut client = None;
     while let Some(command) = commands.recv().await {
-        let state = snapshots.borrow().state;
-        let Some(action) = Action::new(command, state) else {
+        let action = Action::new(command, &snapshots.borrow());
+        let Some(action) = action else {
             tracing::info!("MPD offline; dropping {command:?}");
             continue;
         };
@@ -234,19 +255,26 @@ enum Action {
     Pause(bool),
     Previous,
     Next,
+    Random(bool),
+    Repeat(bool),
+    Single(Single),
 }
 
 impl Action {
-    /// Maps `toggle` from the current state, so it never sends a no-op:
-    /// MPD emits no idle event for those, leaving clients without an update.
-    fn new(command: Command, state: PlayState) -> Option<Self> {
-        Some(match (command, state) {
+    /// Maps toggles from the current state, so it never sends a no-op: MPD
+    /// emits no idle event for those, leaving clients without an update.
+    fn new(command: Command, snapshot: &Snapshot) -> Option<Self> {
+        Some(match (command, snapshot.state) {
             (_, PlayState::Offline) => return None,
             (Command::Previous, _) => Action::Previous,
             (Command::Next, _) => Action::Next,
             (Command::Toggle, PlayState::Play) => Action::Pause(true),
             (Command::Toggle, PlayState::Pause) => Action::Pause(false),
             (Command::Toggle, PlayState::Stop) => Action::Play,
+            (Command::Random, _) => Action::Random(!snapshot.random),
+            (Command::Repeat, _) => Action::Repeat(!snapshot.repeat),
+            (Command::Single, _) if snapshot.single => Action::Single(Single::Off),
+            (Command::Single, _) => Action::Single(Single::On),
         })
     }
 
@@ -256,6 +284,9 @@ impl Action {
             Action::Pause(pause) => client.pause(pause).await,
             Action::Previous => client.previous().await,
             Action::Next => client.next().await,
+            Action::Random(on) => client.random(on).await,
+            Action::Repeat(on) => client.repeat(on).await,
+            Action::Single(mode) => client.single(mode).await,
         }
     }
 }
@@ -308,6 +339,9 @@ mod tests {
             folder: Some("https://m/a/".into()),
             elapsed: Some(Duration::from_secs(10)),
             duration: Some(Duration::from_secs(30)),
+            random: true,
+            repeat: false,
+            single: true,
             at,
         };
         let later = at + Duration::from_secs(5);
@@ -316,6 +350,7 @@ mod tests {
             serde_json::json!({
                 "type": "state", "state": "play", "title": "t", "artist": "a",
                 "folder": "https://m/a/", "elapsed": 15.0, "duration": 30.0,
+                "random": true, "repeat": false, "single": true,
             })
         );
         assert_eq!(
@@ -324,6 +359,23 @@ mod tests {
         );
         snapshot.state = PlayState::Pause;
         assert_eq!(json(&snapshot, later)["elapsed"], 10.0);
+    }
+
+    #[test]
+    fn mode_toggles_invert_the_current_mode() {
+        let mut snapshot = Snapshot {
+            state: PlayState::Pause,
+            random: true,
+            ..Snapshot::offline()
+        };
+        let action = |command, snapshot: &Snapshot| format!("{:?}", Action::new(command, snapshot));
+        assert_eq!(action(Command::Random, &snapshot), "Some(Random(false))");
+        assert_eq!(action(Command::Repeat, &snapshot), "Some(Repeat(true))");
+        assert_eq!(action(Command::Single, &snapshot), "Some(Single(On))");
+        snapshot.single = true;
+        assert_eq!(action(Command::Single, &snapshot), "Some(Single(Off))");
+        snapshot.state = PlayState::Offline;
+        assert_eq!(action(Command::Random, &snapshot), "None");
     }
 
     #[test]

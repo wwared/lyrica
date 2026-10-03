@@ -15,4 +15,4 @@ pub use client::{Client, Version};
 pub use error::{Ack, Error, Result};
 pub use idle::Subsystem;
 pub use song::Song;
-pub use status::{State, Status};
+pub use status::{Single, State, Status};

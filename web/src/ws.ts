@@ -9,10 +9,15 @@ export type Snapshot = {
   folder: string | null;
   elapsed: number | null;
   duration: number | null;
+  random: boolean;
+  repeat: boolean;
+  single: boolean;
   at: number;
 };
 
-export type Command = "previous" | "toggle" | "next";
+/** `random`, `repeat` and `single` toggle the mode. */
+export type Command =
+  "previous" | "toggle" | "next" | "random" | "repeat" | "single";
 
 export type Connection = {
   /** Dropped unless the socket is open. */
@@ -45,6 +50,9 @@ export function connect(onSnapshot: (snapshot: Snapshot) => void): Connection {
         folder: null,
         elapsed: null,
         duration: null,
+        random: false,
+        repeat: false,
+        single: false,
         at: performance.now(),
       });
       retry = window.setTimeout(open, RETRY_MS);
@@ -90,5 +98,17 @@ function parse(data: unknown, at: number): Snapshot | undefined {
   }
   if (message?.type !== "state") return;
   const { state, title, artist, folder, elapsed, duration } = message;
-  return { state, title, artist, folder, elapsed, duration, at };
+  const { random, repeat, single } = message;
+  return {
+    state,
+    title,
+    artist,
+    folder,
+    elapsed,
+    duration,
+    random,
+    repeat,
+    single,
+    at,
+  };
 }

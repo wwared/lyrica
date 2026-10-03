@@ -6,7 +6,7 @@ use tokio::{
 };
 
 use crate::{
-    Error, Result, Song, Status, Subsystem,
+    Error, Result, Single, Song, Status, Subsystem,
     parse::{self, Line},
 };
 
@@ -91,6 +91,22 @@ impl Client {
 
     pub async fn next(&mut self) -> Result<()> {
         self.run("next", &[]).await.map(drop)
+    }
+
+    pub async fn random(&mut self, on: bool) -> Result<()> {
+        self.run("random", &[if on { "1" } else { "0" }])
+            .await
+            .map(drop)
+    }
+
+    pub async fn repeat(&mut self, on: bool) -> Result<()> {
+        self.run("repeat", &[if on { "1" } else { "0" }])
+            .await
+            .map(drop)
+    }
+
+    pub async fn single(&mut self, mode: Single) -> Result<()> {
+        self.run("single", &[mode.as_str()]).await.map(drop)
     }
 
     /// Waits until one of `subsystems` (all if empty) changes. Blocks the
@@ -219,6 +235,9 @@ mod tests {
             ("currentsong\n", "OK\n"),
             ("pause \"0\"\n", "OK\n"),
             ("next\n", "OK\n"),
+            ("random \"1\"\n", "OK\n"),
+            ("repeat \"0\"\n", "OK\n"),
+            ("single \"oneshot\"\n", "OK\n"),
         ])
         .await;
         let mut client = Client::connect(addr).await.unwrap();
@@ -230,6 +249,9 @@ mod tests {
         assert_eq!(client.current_song().await.unwrap(), None);
         client.pause(false).await.unwrap();
         client.next().await.unwrap();
+        client.random(true).await.unwrap();
+        client.repeat(false).await.unwrap();
+        client.single(Single::Oneshot).await.unwrap();
         drop(client);
         server.await.unwrap();
     }

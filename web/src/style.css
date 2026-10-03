@@ -131,16 +131,29 @@ body {
 }
 
 .controls {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
   margin-top: 16px;
+}
+
+.transport {
+  grid-column: 2;
+  display: flex;
+  gap: 8px;
+}
+
+.modes {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  gap: 1px;
 }
 
 .controls button {
   display: grid;
   place-items: center;
-  width: 56px;
+  width: 52px;
   height: 56px;
   padding: 0;
   border: 0;
@@ -169,4 +182,22 @@ body {
 .controls .toggle svg {
   width: 44px;
   height: 44px;
+}
+
+/* Narrow so all three fit beside the centred transport down to 375 px screens
+   ((335 − 172) / 2 = 81.5 px of room). */
+.modes button {
+  width: 26px;
+  height: 44px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.modes button[aria-pressed="true"] {
+  color: var(--fg);
+}
+
+.modes svg {
+  width: 20px;
+  height: 20px;
 }

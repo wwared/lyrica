@@ -14,6 +14,9 @@ pub struct Status {
     pub song_id: Option<u32>,
     pub elapsed: Option<Duration>,
     pub duration: Option<Duration>,
+    pub random: bool,
+    pub repeat: bool,
+    pub single: Single,
     /// Queue version; changes whenever the queue does.
     pub queue_version: u32,
     pub queue_length: u32,
@@ -26,6 +29,26 @@ pub enum State {
     Stop,
 }
 
+/// `single` mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Single {
+    #[default]
+    Off,
+    On,
+    /// On until the current song ends, then off.
+    Oneshot,
+}
+
+impl Single {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Single::Off => "0",
+            Single::On => "1",
+            Single::Oneshot => "oneshot",
+        }
+    }
+}
+
 impl Status {
     pub(crate) fn from_pairs<'a>(pairs: impl Iterator<Item = (&'a str, &'a str)>) -> Result<Self> {
         let mut state = None;
@@ -35,6 +58,9 @@ impl Status {
         let mut song_id = None;
         let mut elapsed = None;
         let mut duration = None;
+        let mut random = false;
+        let mut repeat = false;
+        let mut single = Single::Off;
         for (key, value) in pairs {
             match key {
                 "state" => {
@@ -51,6 +77,16 @@ impl Status {
                 "songid" => song_id = Some(field(key, value)?),
                 "elapsed" => elapsed = Some(seconds(key, value)?),
                 "duration" => duration = Some(seconds(key, value)?),
+                "random" => random = flag(key, value)?,
+                "repeat" => repeat = flag(key, value)?,
+                "single" => {
+                    single = match value {
+                        "0" => Single::Off,
+                        "1" => Single::On,
+                        "oneshot" => Single::Oneshot,
+                        _ => return Err(invalid(key, value)),
+                    }
+                }
                 _ => {}
             }
         }
@@ -60,9 +96,20 @@ impl Status {
             song_id,
             elapsed,
             duration,
+            random,
+            repeat,
+            single,
             queue_version: queue_version.ok_or_else(|| missing("playlist"))?,
             queue_length: queue_length.ok_or_else(|| missing("playlistlength"))?,
         })
+    }
+}
+
+fn flag(key: &str, value: &str) -> Result<bool> {
+    match value {
+        "0" => Ok(false),
+        "1" => Ok(true),
+        _ => Err(invalid(key, value)),
     }
 }
 
@@ -91,6 +138,9 @@ mod tests {
                 song_id: Some(40610),
                 elapsed: None,
                 duration: None,
+                random: true,
+                repeat: true,
+                single: Single::Off,
                 queue_version: 2,
                 queue_length: 175872,
             }
@@ -107,6 +157,12 @@ mod tests {
         assert_eq!(status.state, State::Play);
         assert_eq!(status.elapsed, Some(Duration::from_millis(12_345)));
         assert_eq!(status.duration, Some(Duration::from_millis(305_784)));
+        assert_eq!(
+            parse("playlist: 7\nplaylistlength: 3\nstate: play\nsingle: oneshot\nrepeat: 0")
+                .unwrap()
+                .single,
+            Single::Oneshot
+        );
     }
 
     #[test]
@@ -128,6 +184,10 @@ mod tests {
         ));
         assert!(matches!(
             parse("playlist: 1\nplaylistlength: -1\nstate: stop"),
+            Err(Error::Protocol(_))
+        ));
+        assert!(matches!(
+            parse("playlist: 1\nplaylistlength: 0\nstate: stop\nrandom: yes"),
             Err(Error::Protocol(_))
         ));
     }
