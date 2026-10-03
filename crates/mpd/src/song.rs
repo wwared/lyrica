@@ -14,6 +14,7 @@ pub struct Song {
     pub file: String,
     pub title: Option<String>,
     pub artist: Option<String>,
+    pub album_artist: Option<String>,
     pub album: Option<String>,
     pub duration: Option<Duration>,
     /// Queue position.
@@ -29,6 +30,7 @@ impl Song {
         let mut file = None;
         let mut title = None;
         let mut artist = None;
+        let mut album_artist = None;
         let mut album = None;
         let mut duration = None;
         let mut position = None;
@@ -40,6 +42,7 @@ impl Song {
                 "file" => file = Some(value.to_owned()),
                 "Title" => first(&mut title, value),
                 "Artist" => first(&mut artist, value),
+                "AlbumArtist" => first(&mut album_artist, value),
                 "Album" => first(&mut album, value),
                 "duration" => duration = Some(seconds(key, value)?),
                 "Pos" => position = Some(field(key, value)?),
@@ -54,6 +57,7 @@ impl Song {
             file: file.ok_or_else(|| missing("file"))?,
             title,
             artist,
+            album_artist,
             album,
             duration,
             position,
@@ -90,6 +94,7 @@ mod tests {
                 file: "FELT/00 Puppet in the Dark.m4a".into(),
                 title: Some("Puppet in the Dark".into()),
                 artist: Some("FELT".into()),
+                album_artist: Some("FELT".into()),
                 album: Some("FELT Special Page Contents".into()),
                 duration: Some(Duration::from_millis(305_784)),
                 position: Some(40609),

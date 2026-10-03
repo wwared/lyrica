@@ -196,7 +196,9 @@ async fn fetch(client: &mut Client, music_url: Option<&str>) -> Result<Snapshot>
         duration: status
             .duration
             .or_else(|| song.as_ref().and_then(|s| s.duration)),
-        artist: song.as_mut().and_then(|s| s.artist.take()),
+        artist: song
+            .as_mut()
+            .and_then(|s| s.artist.take().or_else(|| s.album_artist.take())),
         album: song.as_mut().and_then(|s| s.album.take()),
         folder: music_url
             .zip(song.as_ref())
@@ -402,6 +404,7 @@ mod tests {
             file: "a/b/c.flac".into(),
             title: None,
             artist: None,
+            album_artist: None,
             album: None,
             duration: None,
             position: None,

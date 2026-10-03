@@ -19,7 +19,7 @@ Done: now playing pinned to the bottom with fixed-height lines; artist and album
 
 ## Backlog (roughly in order)
 
-- More song info in now playing (album artist, year, …).
+- More song info in now playing (year, …).
 - Volume.
 - Live queue view: windowed loading, re-centering, album grouping, lazy cover art. Own scroll container with `overscroll-behavior: contain` (the page is fixed; see `architecture.md` → "Fixed viewport").
 - Album art beyond the song's own folder on the HTTP mirror.
