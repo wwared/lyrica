@@ -30,6 +30,7 @@ export function App() {
   const [listening, toggleListening] = useStream(streamUrl, {
     title: heading,
     artist: snapshot?.artist ?? "",
+    album: snapshot?.album ?? "",
     // Left out while unknown, so the lock screen never flashes the placeholder.
     artwork:
       cover === undefined
@@ -65,6 +66,9 @@ export function App() {
         </button>
         <p class="artist" data-flip="move">
           <Marquee text={snapshot?.artist ?? ""} />
+        </p>
+        <p class="album" data-flip="move">
+          <Marquee text={snapshot?.album ?? ""} />
         </p>
         <Progress snapshot={snapshot} />
         {/* Three columns so the transport stays centred whatever is beside it. */}
@@ -218,7 +222,7 @@ function Art({ cover }: { cover: string | null | undefined }) {
 /** Drawn outside Preact: per-frame re-renders would be wasted work. */
 function Progress({ snapshot }: { snapshot: Snapshot | null }) {
   const fill = useRef<HTMLDivElement>(null);
-  const time = useRef<HTMLParagraphElement>(null);
+  const time = useRef<HTMLSpanElement>(null);
 
   useLayoutEffect(() => {
     let frame = 0;
@@ -246,9 +250,22 @@ function Progress({ snapshot }: { snapshot: Snapshot | null }) {
       <div class="track" data-flip="scale">
         <div class="fill" ref={fill} />
       </div>
-      <p class="time" ref={time} data-flip="move" />
+      <p class="time" data-flip="move">
+        {/* Invisible, sizes the box: fits every time of this song, so
+            ticking never resizes the bar. */}
+        <span aria-hidden="true">{timeSizer(snapshot?.duration ?? null)}</span>
+        <span ref={time} />
+      </p>
     </div>
   );
+}
+
+/** The widest `formatTime` pair for `duration`: digits are tabular. */
+function timeSizer(duration: number | null) {
+  if (duration !== null && duration >= 36000) return "00:00:00 / 00:00:00";
+  if (duration !== null && duration >= 3600) return "0:00:00 / 0:00:00";
+  // Also any stream (elapsed only) under 100 hours.
+  return "00:00 / 00:00";
 }
 
 const PREVIOUS = "M6 6h2v12H6zM9.5 12 18 6v12z";

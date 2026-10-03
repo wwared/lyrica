@@ -8,15 +8,17 @@ type Stream = { start(url: string): void; stop(): void };
 export type NowPlaying = {
   title: string;
   artist: string;
+  album: string;
   /** Absolute URL; `undefined` shows none. */
   artwork: string | undefined;
 };
 
-function show({ title, artist, artwork }: NowPlaying) {
+function show({ title, artist, album, artwork }: NowPlaying) {
   if (!("mediaSession" in navigator)) return;
   navigator.mediaSession.metadata = new MediaMetadata({
     title,
     artist,
+    album,
     artwork: artwork === undefined ? [] : [{ src: artwork }],
   });
 }
@@ -104,7 +106,10 @@ export function useStream(
   // Also set again when playback (re)starts, in case the browser drops
   // metadata set while nothing was playing.
   stream.current ??= createStream(setOn, () => show(latest.current));
-  useEffect(() => show(info), [info.title, info.artist, info.artwork]);
+  useEffect(
+    () => show(info),
+    [info.title, info.artist, info.album, info.artwork],
+  );
   useEffect(() => {
     if (url === null) stream.current?.stop();
   }, [url]);

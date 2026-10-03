@@ -111,9 +111,9 @@ body {
    full-mode art is drawn above the section); mini mode moves them right of
    the art. */
 .now-playing {
-  /* Every row: title 1.75rem + 4px, artist 1.25rem + 20px, progress
-     4px + 8px + 1rem, controls 16px + 56px. */
-  --mini-art: calc(4rem + 108px);
+  /* Every row: title 1.75rem + 4px, artist 1.25rem + 2px, album
+     1.125rem + 12px, progress 1rem, controls 16px + 56px. */
+  --mini-art: calc(5.125rem + 90px);
   /* The section's height: rows plus the 24 px top and bottom padding. */
   --section: calc(var(--mini-art) + 48px);
   /* Edge to edge, capped (larger screens), and on short screens leaving
@@ -131,6 +131,7 @@ body {
   grid-template-areas:
     "title switch"
     "artist switch"
+    "album album"
     "progress progress"
     "controls controls";
   column-gap: 16px;
@@ -143,6 +144,7 @@ body {
   grid-template-areas:
     "art title switch"
     "art artist switch"
+    "art album album"
     "art progress progress"
     "art controls controls";
 }
@@ -198,9 +200,18 @@ body {
 .artist {
   grid-area: artist;
   height: 1.25rem;
-  margin: 0 0 20px;
+  margin: 0 0 2px;
   font-size: 0.9375rem;
   line-height: 1.25rem;
+  color: var(--muted);
+}
+
+.album {
+  grid-area: album;
+  height: 1.125rem;
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
   color: var(--muted);
 }
 
@@ -212,11 +223,19 @@ body {
   margin: 0;
 }
 
+/* The time sits beside the bar, in a box of fixed width (see `timeSizer`),
+   so the bar never changes length while playing. */
 .progress {
   grid-area: progress;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 1rem;
 }
 
 .track {
+  flex: 1;
+  min-width: 0;
   height: 4px;
   border-radius: 2px;
   background: var(--track);
@@ -232,12 +251,23 @@ body {
 }
 
 .time {
-  height: 1rem;
-  margin: 8px 0 0;
+  display: grid;
+  justify-items: end;
+  margin: 0;
   line-height: 1rem;
   color: var(--muted);
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The sizer and the live text share one cell. */
+.time > span {
+  grid-area: 1 / 1;
+}
+
+.time > [aria-hidden] {
+  visibility: hidden;
 }
 
 .controls {
