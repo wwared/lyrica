@@ -62,6 +62,7 @@ UI direction (implemented parts are detailed under "Now playing"; the rest is pl
   - Adjacent tracks from the same album are visually grouped (small gap/separator), with one cover per group, loaded lazily when visible; no cover if the album has none.
   - Per-track info: album, album/track artist, title, track number. Exact layout to be iterated on.
   - Tapping a track plays it.
+  - **Queue actions (later, to design):** convenience actions, possibly in a queue toolbar, e.g. play the current album from its first track with random off.
 - **Stored playlists (planned):** a dedicated button opens the list of server playlists; tapping one clears the queue and loads it. The only way lyrica changes the queue. No general settings menu.
 - Slow data (cover art, queue windows, playlist listings) is fetched lazily and asynchronously; controls and now playing never wait on it.
 - Light/dark mode follows the system preference. Colours are greys from CSS variables now; a gruvbox-based palette with accent colours is planned.

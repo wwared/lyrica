@@ -59,3 +59,9 @@ Every colour is one of four CSS variables per light / dark scheme (background, f
 1. **Gruvbox palette:** map the existing variables to gruvbox light and dark.
 2. **Accents:** gruvbox accent colours for highlights (on toggles, progress and volume fill, current queue track); exact use to iterate on.
 3. **Browser colours:** `theme-color` meta tags and manifest follow the palette.
+
+## Later (to design)
+
+Ideas to revisit once the phases above are done; how they look and work is open.
+
+- **Queue actions:** convenience actions on the queue, possibly in a queue-specific toolbar. Example: play the current album from the start — jump to the first track of the current song's album in the queue, play it, and turn random off (done by hand today). Placement, the set of actions and how to find album boundaries without fetching the whole queue are open.
