@@ -49,6 +49,17 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--fg);
+  /* App-like fixed viewport: no rubber-band bounce, overscroll stretch or
+     pull-to-refresh. Scrolling lists scroll inside their own containers. */
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* iOS rubber-bands the document even when it doesn't overflow and ignores
+   `overflow: hidden` on body; a fixed body leaves nothing to drag. */
+body {
+  position: fixed;
+  inset: 0;
 }
 
 /* Positioned: contains the full-mode art. */
