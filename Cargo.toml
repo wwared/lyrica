@@ -11,7 +11,7 @@ publish = false
 lyrica-mpd = { path = "crates/mpd" }
 
 axum = { version = "0.8.9", features = ["ws"] }
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
 nom = "8.0.0"
 percent-encoding = "2.3.2"
 rust-embed = { version = "8.12.0", features = [

@@ -38,6 +38,7 @@ Headless Chromium (`nix shell nixpkgs#chromium`) needs `--headless=new --no-sand
 
 ```
 flake.nix, treefmt.nix   Nix outputs and formatter config
+nix/module.nix           NixOS module (services.lyrica)
 Cargo.toml               Rust workspace (shared deps in [workspace.dependencies])
 crates/mpd/              lyrica-mpd: MPD protocol client library
 crates/lyrica/           lyrica: server binary, embeds web/dist
@@ -54,6 +55,24 @@ docs/                    Project documentation
 3. else an empty directory (with a cargo warning), so Rust-only work never needs a frontend build.
 
 Debug builds read embedded files from disk at runtime, so `npm run build` is picked up without recompiling Rust; release builds include the bytes. Files under `assets/` (content-hashed by Vite) are served as immutable; everything else with `no-cache`.
+
+## NixOS module
+
+The flake exports `nixosModules.default`, a `lyrica` systemd service (`DynamicUser`, hardened, no state):
+
+```nix
+services.lyrica = {
+  enable = true;
+  settings = {
+    listen = "127.0.0.1:8080"; # default; point the reverse proxy here
+    mpd = "127.0.0.1:6600"; # default
+    music-url = "https://music.example.com";
+  };
+  environmentFile = "/run/secrets/lyrica"; # LYRICA_MPD_PASSWORD=...
+};
+```
+
+`settings` maps 1:1 to the command-line flags (`lyrica --help`); `null` omits one. The MPD password goes in the environment file (`LYRICA_MPD_PASSWORD`, also read when running by hand), not in `settings`, which would put it in the Nix store and the process list. Verified in a NixOS VM test (not part of `nix flake check`): flags in `ExecStart`, the page served, the password reaching a fake MPD and absent from `ps`.
 
 ## Dependencies
 

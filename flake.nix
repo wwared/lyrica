@@ -133,5 +133,6 @@
       checks = lib.mapAttrs (_: o: o.checks) outputs;
       formatter = lib.mapAttrs (_: o: o.formatter) outputs;
       devShells = lib.mapAttrs (_: o: o.devShells) outputs;
+      nixosModules.default = import ./nix/module.nix self;
     };
 }

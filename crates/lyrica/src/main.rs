@@ -28,8 +28,9 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1:6600")]
     mpd: String,
 
-    /// MPD password, sent after every connect.
-    #[arg(long)]
+    /// MPD password, sent after every connect. Prefer the environment
+    /// variable: arguments are visible to every user in the process list.
+    #[arg(long, env = "LYRICA_MPD_PASSWORD", hide_env_values = true)]
     mpd_password: Option<String>,
 
     /// Base URL of an HTTP mirror of MPD's music directory; enables album
