@@ -24,7 +24,7 @@ in
     settings = mkOption {
       description = ''
         Command-line arguments, by flag name (see `lyrica --help`): a string or
-        number is passed as `--name value`; `null` omits the flag. Passwords
+        number is passed as `--name=value`; `null` omits the flag. Passwords
         belong in {option}`services.lyrica.environmentFile`.
       '';
       default = { };
@@ -76,7 +76,7 @@ in
       ];
       serviceConfig = {
         ExecStart = utils.escapeSystemdExecArgs (
-          [ (lib.getExe cfg.package) ] ++ lib.cli.toGNUCommandLine { } cfg.settings
+          [ (lib.getExe cfg.package) ] ++ lib.cli.toCommandLineGNU { } cfg.settings
         );
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
         Restart = "on-failure";
