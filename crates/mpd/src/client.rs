@@ -109,6 +109,11 @@ impl Client {
         self.run("single", &[mode.as_str()]).await.map(drop)
     }
 
+    /// `volume` 0–100 (MPD rejects more).
+    pub async fn set_volume(&mut self, volume: u8) -> Result<()> {
+        self.run("setvol", &[&volume.to_string()]).await.map(drop)
+    }
+
     /// Waits until one of `subsystems` (all if empty) changes. Blocks the
     /// connection meanwhile, so idle on a dedicated client.
     pub async fn idle(&mut self, subsystems: &[Subsystem]) -> Result<Vec<Subsystem>> {
@@ -238,6 +243,7 @@ mod tests {
             ("random \"1\"\n", "OK\n"),
             ("repeat \"0\"\n", "OK\n"),
             ("single \"oneshot\"\n", "OK\n"),
+            ("setvol \"55\"\n", "OK\n"),
         ])
         .await;
         let mut client = Client::connect(addr).await.unwrap();
@@ -252,6 +258,7 @@ mod tests {
         client.random(true).await.unwrap();
         client.repeat(false).await.unwrap();
         client.single(Single::Oneshot).await.unwrap();
+        client.set_volume(55).await.unwrap();
         drop(client);
         server.await.unwrap();
     }

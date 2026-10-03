@@ -5,6 +5,7 @@ import { covers, findCover } from "./cover";
 import { Marquee } from "./marquee";
 import { formatTime, position } from "./progress";
 import { useStream } from "./stream";
+import { Volume } from "./volume";
 import { connect, type Command, type Connection, type Snapshot } from "./ws";
 
 export function App() {
@@ -38,6 +39,7 @@ export function App() {
         : new URL(cover ?? noCover, location.href).href,
   });
   const [mini, setMini] = useState(false);
+  const [volumeOpen, setVolumeOpen] = useState(false);
   const nowPlaying = useRef<HTMLElement>(null);
   const capture = useFlip(nowPlaying, mini);
 
@@ -60,6 +62,7 @@ export function App() {
           onClick={() => {
             capture();
             setMini(!mini);
+            setVolumeOpen(false);
           }}
         >
           <Icon path={EXPAND} />
@@ -71,24 +74,38 @@ export function App() {
           <Marquee text={snapshot?.album ?? ""} />
         </p>
         <Progress snapshot={snapshot} />
+        <Volume
+          open={volumeOpen}
+          volume={snapshot?.volume ?? null}
+          disabled={disabled}
+          onChange={(volume) => send({ type: "volume", volume })}
+        />
         {/* Three columns so the transport stays centred whatever is beside it. */}
         <div class="controls">
-          {streamUrl !== null && (
+          <div class="extras">
+            {streamUrl !== null && (
+              <button
+                aria-label="Play here"
+                aria-pressed={listening}
+                onClick={toggleListening}
+              >
+                <Icon path={HEADPHONES} />
+              </button>
+            )}
             <button
-              class="listen"
-              aria-label="Play here"
-              aria-pressed={listening}
-              onClick={toggleListening}
+              aria-label="Volume"
+              aria-expanded={volumeOpen}
+              onClick={() => setVolumeOpen(!volumeOpen)}
             >
-              <Icon path={HEADPHONES} />
+              <Icon path={VOLUME} />
             </button>
-          )}
+          </div>
           <div class="transport">
             <button
               data-flip="move"
               aria-label="Previous"
               disabled={disabled}
-              onClick={() => send("previous")}
+              onClick={() => send({ type: "previous" })}
             >
               <Icon path={PREVIOUS} />
             </button>
@@ -97,7 +114,7 @@ export function App() {
               data-flip="move"
               aria-label={snapshot?.state === "play" ? "Pause" : "Play"}
               disabled={disabled}
-              onClick={() => send("toggle")}
+              onClick={() => send({ type: "toggle" })}
             >
               <Icon path={snapshot?.state === "play" ? PAUSE : PLAY} />
             </button>
@@ -105,7 +122,7 @@ export function App() {
               data-flip="move"
               aria-label="Next"
               disabled={disabled}
-              onClick={() => send("next")}
+              onClick={() => send({ type: "next" })}
             >
               <Icon path={NEXT} />
             </button>
@@ -117,7 +134,7 @@ export function App() {
                 aria-label={label}
                 aria-pressed={snapshot?.[mode] ?? false}
                 disabled={disabled}
-                onClick={() => send(mode)}
+                onClick={() => send({ type: mode })}
               >
                 <Icon path={path} />
               </button>
@@ -277,6 +294,9 @@ const EXPAND = "M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z";
 // Material Icons (Apache 2.0): headphones.
 const HEADPHONES =
   "M12 3c-4.97 0-9 4.03-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7c0-4.97-4.03-9-9-9z";
+// Material Icons (Apache 2.0): volume_up.
+const VOLUME =
+  "M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z";
 // Material Icons (Apache 2.0): shuffle, looks_one (outlined), repeat.
 const MODES = [
   {

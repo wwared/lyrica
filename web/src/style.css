@@ -270,6 +270,70 @@ body {
   visibility: hidden;
 }
 
+/* Over the album and progress rows while open, hiding them. Only reachable in
+   full mode (the toggle is hidden in mini). */
+.volume {
+  grid-row: album-start / progress-end;
+  grid-column: album-start / album-end;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 150ms var(--switch-ease),
+    visibility 0s 150ms;
+}
+
+.volume.open {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 150ms var(--switch-ease);
+}
+
+/* The whole band's height is the touch target. */
+.slider {
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.slider[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.rail {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+
+.thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--fg);
+  transform: translate(-50%, -50%);
+}
+
+/* Fixed width, so the bar keeps its length. */
+.level {
+  width: 3ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
 .controls {
   grid-area: controls;
   display: grid;
@@ -297,12 +361,12 @@ body {
    out fast, before the sliding transport and art reach them (~80 ms), and
    back in only at the end of the switch, once they have left (~250 ms at
    375 px). */
-.listen,
+.extras,
 .modes {
   transition: opacity 100ms var(--switch-ease) 250ms;
 }
 
-.mini .listen,
+.mini .extras,
 .mini .modes {
   opacity: 0;
   visibility: hidden;
@@ -370,21 +434,27 @@ body {
   height: 20px;
 }
 
-/* The icon lines up with the start of the progress bar. */
-.controls .listen {
+/* Play here and volume; the first icon lines up with the start of the
+   progress bar. */
+.extras {
   grid-column: 1;
   justify-self: start;
+  display: flex;
+  margin-left: -10px;
+}
+
+.controls .extras button {
   width: 44px;
   height: 44px;
-  margin-left: -10px;
   color: var(--muted);
 }
 
-.controls .listen[aria-pressed="true"] {
+.controls .extras button[aria-pressed="true"],
+.controls .extras button[aria-expanded="true"] {
   color: var(--fg);
 }
 
-.listen svg {
+.extras svg {
   width: 24px;
   height: 24px;
 }
@@ -426,8 +496,10 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .playlist,
   .mini .playlist,
-  .listen,
-  .mini .listen,
+  .extras,
+  .mini .extras,
+  .volume,
+  .volume.open,
   .modes,
   .mini .modes,
   .switch svg {

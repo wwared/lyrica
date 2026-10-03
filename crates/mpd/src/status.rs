@@ -14,6 +14,8 @@ pub struct Status {
     pub song_id: Option<u32>,
     pub elapsed: Option<Duration>,
     pub duration: Option<Duration>,
+    /// 0–100; `None` when MPD can't tell (no mixer, or none open).
+    pub volume: Option<u8>,
     pub random: bool,
     pub repeat: bool,
     pub single: Single,
@@ -58,6 +60,7 @@ impl Status {
         let mut song_id = None;
         let mut elapsed = None;
         let mut duration = None;
+        let mut volume = None;
         let mut random = false;
         let mut repeat = false;
         let mut single = Single::Off;
@@ -77,6 +80,8 @@ impl Status {
                 "songid" => song_id = Some(field(key, value)?),
                 "elapsed" => elapsed = Some(seconds(key, value)?),
                 "duration" => duration = Some(seconds(key, value)?),
+                // Older MPDs report -1 instead of leaving it out.
+                "volume" => volume = u8::try_from(field::<i32>(key, value)?).ok(),
                 "random" => random = flag(key, value)?,
                 "repeat" => repeat = flag(key, value)?,
                 "single" => {
@@ -96,6 +101,7 @@ impl Status {
             song_id,
             elapsed,
             duration,
+            volume,
             random,
             repeat,
             single,
@@ -138,6 +144,7 @@ mod tests {
                 song_id: Some(40610),
                 elapsed: None,
                 duration: None,
+                volume: Some(100),
                 random: true,
                 repeat: true,
                 single: Single::Off,
@@ -167,9 +174,10 @@ mod tests {
 
     #[test]
     fn empty_queue() {
-        let status = parse("playlist: 1\nplaylistlength: 0\nstate: stop").unwrap();
+        let status = parse("volume: -1\nplaylist: 1\nplaylistlength: 0\nstate: stop").unwrap();
         assert_eq!(status.song, None);
         assert_eq!(status.queue_length, 0);
+        assert_eq!(status.volume, None);
     }
 
     #[test]

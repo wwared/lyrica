@@ -15,12 +15,11 @@ End-to-end, bare basics only: the currently playing song title, a smooth progres
 
 ## After milestone 1
 
-Done: now playing pinned to the bottom with fixed-height lines; artist and album lines; time beside the progress bar (fixed-width box); bouncing marquee for long text; Iosevka Aile font; album art (`cover.*` in the song's folder on the HTTP mirror, via `--music-url`; empty while loading); random / single / repeat toggles; animated full / mini mode switch (queue still a placeholder); play-here toggle for MPD's `httpd` stream (via `--stream-url`), with title, artist, album and cover on the lock screen; no text selection. Details in `architecture.md` → "Now playing".
+Done: now playing pinned to the bottom with fixed-height lines; artist (album artist as fallback) and album lines; time beside the progress bar (fixed-width box); bouncing marquee for long text; Iosevka Aile font; album art (`cover.*` in the song's folder on the HTTP mirror, via `--music-url`; empty while loading); random / single / repeat toggles; MPD volume slider; animated full / mini mode switch (queue still a placeholder); play-here toggle for MPD's `httpd` stream (via `--stream-url`), with title, artist, album and cover on the lock screen; no text selection. Details in `architecture.md` → "Now playing".
 
 ## Backlog (roughly in order)
 
 - More song info in now playing (year, …).
-- Volume.
 - Live queue view: windowed loading, re-centering, album grouping, lazy cover art. Own scroll container with `overscroll-behavior: contain` (the page is fixed; see `architecture.md` → "Fixed viewport").
 - Album art beyond the song's own folder on the HTTP mirror.
 - Settings menu: stored playlists (list, clear queue, load).

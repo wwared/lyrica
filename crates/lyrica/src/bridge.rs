@@ -66,6 +66,8 @@ pub struct Snapshot {
     pub folder: Option<String>,
     pub elapsed: Option<Duration>,
     pub duration: Option<Duration>,
+    /// 0–100; `None` when MPD can't tell.
+    pub volume: Option<u8>,
     pub random: bool,
     pub repeat: bool,
     /// Also on for MPD's `oneshot`.
@@ -86,6 +88,7 @@ enum ServerMessage<'a> {
         folder: Option<&'a str>,
         elapsed: Option<f64>,
         duration: Option<f64>,
+        volume: Option<u8>,
         random: bool,
         repeat: bool,
         single: bool,
@@ -102,6 +105,7 @@ impl Snapshot {
             folder: None,
             elapsed: None,
             duration: None,
+            volume: None,
             random: false,
             repeat: false,
             single: false,
@@ -126,6 +130,7 @@ impl Snapshot {
             folder: self.folder.as_deref(),
             elapsed: elapsed.map(|e| e.as_secs_f64()),
             duration: self.duration.map(|d| d.as_secs_f64()),
+            volume: self.volume,
             random: self.random,
             repeat: self.repeat,
             single: self.single,
@@ -134,7 +139,8 @@ impl Snapshot {
     }
 }
 
-/// Client → server message. `random`, `repeat` and `single` toggle the mode.
+/// Client → server message. `random`, `repeat` and `single` toggle the mode;
+/// `volume` sets MPD's volume.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Command {
@@ -144,6 +150,7 @@ pub enum Command {
     Random,
     Repeat,
     Single,
+    Volume { volume: u8 },
 }
 
 /// Keeps `snapshots` current, reconnecting with backoff while MPD is
@@ -182,7 +189,7 @@ async fn watch_player(
     loop {
         snapshots.send_replace(fetch(&mut client, music_url).await?);
         client
-            .idle(&[Subsystem::Player, Subsystem::Options])
+            .idle(&[Subsystem::Player, Subsystem::Options, Subsystem::Mixer])
             .await?;
     }
 }
@@ -205,6 +212,7 @@ async fn fetch(client: &mut Client, music_url: Option<&str>) -> Result<Snapshot>
             .and_then(|(m, s)| folder(m, &s.file)),
         title: song.map(title),
         elapsed: status.elapsed,
+        volume: status.volume,
         random: status.random,
         repeat: status.repeat,
         single: status.single != Single::Off,
@@ -265,10 +273,11 @@ enum Action {
     Random(bool),
     Repeat(bool),
     Single(Single),
+    Volume(u8),
 }
 
 impl Action {
-    /// Maps toggles from the current state, so it never sends a no-op: MPD
+    /// Maps toggles from the current state, so they never send a no-op: MPD
     /// emits no idle event for those, leaving clients without an update.
     fn new(command: Command, snapshot: &Snapshot) -> Option<Self> {
         Some(match (command, snapshot.state) {
@@ -282,6 +291,7 @@ impl Action {
             (Command::Repeat, _) => Action::Repeat(!snapshot.repeat),
             (Command::Single, _) if snapshot.single => Action::Single(Single::Off),
             (Command::Single, _) => Action::Single(Single::On),
+            (Command::Volume { volume }, _) => Action::Volume(volume),
         })
     }
 
@@ -294,6 +304,7 @@ impl Action {
             Action::Random(on) => client.random(on).await,
             Action::Repeat(on) => client.repeat(on).await,
             Action::Single(mode) => client.single(mode).await,
+            Action::Volume(volume) => client.set_volume(volume).await,
         }
     }
 }
@@ -347,6 +358,7 @@ mod tests {
             folder: Some("https://m/a/".into()),
             elapsed: Some(Duration::from_secs(10)),
             duration: Some(Duration::from_secs(30)),
+            volume: Some(70),
             random: true,
             repeat: false,
             single: true,
@@ -357,7 +369,7 @@ mod tests {
             json(&snapshot, later),
             serde_json::json!({
                 "type": "state", "state": "play", "title": "t", "artist": "a", "album": "al",
-                "folder": "https://m/a/", "elapsed": 15.0, "duration": 30.0,
+                "folder": "https://m/a/", "elapsed": 15.0, "duration": 30.0, "volume": 70,
                 "random": true, "repeat": false, "single": true,
             })
         );

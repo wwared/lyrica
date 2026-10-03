@@ -10,6 +10,8 @@ export type Snapshot = {
   folder: string | null;
   elapsed: number | null;
   duration: number | null;
+  /** 0–100; `null` when MPD can't tell. */
+  volume: number | null;
   random: boolean;
   repeat: boolean;
   single: boolean;
@@ -22,9 +24,10 @@ export type Config = {
   stream: string | null;
 };
 
-/** `random`, `repeat` and `single` toggle the mode. */
+/** `random`, `repeat` and `single` toggle the mode; `volume` sets MPD's. */
 export type Command =
-  "previous" | "toggle" | "next" | "random" | "repeat" | "single";
+  | { type: "previous" | "toggle" | "next" | "random" | "repeat" | "single" }
+  | { type: "volume"; volume: number };
 
 export type Connection = {
   /** Dropped unless the socket is open. */
@@ -62,6 +65,7 @@ export function connect(
         folder: null,
         elapsed: null,
         duration: null,
+        volume: null,
         random: false,
         repeat: false,
         single: false,
@@ -91,7 +95,7 @@ export function connect(
   return {
     send(command) {
       if (socket.readyState === WebSocket.OPEN)
-        socket.send(JSON.stringify({ type: command }));
+        socket.send(JSON.stringify(command));
     },
     close() {
       document.removeEventListener("visibilitychange", onVisibility);
@@ -110,7 +114,8 @@ function parse(data: unknown, at: number): Snapshot | Config | undefined {
   }
   if (message?.type === "config") return { stream: message.stream };
   if (message?.type !== "state") return;
-  const { state, title, artist, album, folder, elapsed, duration } = message;
+  const { state, title, artist, album, folder, elapsed, duration, volume } =
+    message;
   const { random, repeat, single } = message;
   return {
     state,
@@ -120,6 +125,7 @@ function parse(data: unknown, at: number): Snapshot | Config | undefined {
     folder,
     elapsed,
     duration,
+    volume,
     random,
     repeat,
     single,

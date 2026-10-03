@@ -10,6 +10,7 @@ const snapshot = (overrides: Partial<Snapshot>): Snapshot => ({
   folder: null,
   elapsed: 10,
   duration: 100,
+  volume: null,
   random: false,
   repeat: false,
   single: false,
