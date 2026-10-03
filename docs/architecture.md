@@ -13,15 +13,13 @@ Only the general direction is fixed here; details are decided while implementing
 Async MPD client library, independent of the web server.
 
 - tokio TCP connections; responses parsed with nom 8 (`Parser` trait API).
-- Implements only the commands lyrica needs, added incrementally. Currently: `password`, `ping`, `status`, `currentsong`, `play`, `pause`, `previous`, `next`, `random`, `repeat`, `single`, `idle`.
-- **`Client`** is one connection running one command at a time; responses are framed by line and each line parsed with nom (`OK`, `ACK …`, `key: value`). Typed results (`Status`, `Song`) keep only the fields used so far and ignore unknown keys.
+- Implements only the commands lyrica needs, added incrementally. Currently: `password`, `ping`, `status`, `currentsong`, `play`, `pause`, `previous`, `next`, `random`, `repeat`, `single`, `setvol`, `idle`.
+- **`Client`** is one connection running one command at a time; responses are framed by line and each line parsed with nom (`OK`, `ACK …`, `key: value`). Typed results (`Status`, `Song`) keep only the fields lyrica uses or is about to use and ignore unknown keys.
   - `ACK` errors leave the connection usable. I/O and protocol errors, or a command future dropped mid-response, leave it out of sync: later commands fail with `Error::Broken` and the caller reconnects.
   - `idle` blocks its connection, so idling needs its own `Client`. Arguments are always quoted; newlines are rejected.
   - Not yet handled: MPD's `connection_timeout` closing unused connections, binary responses, command lists.
-- **Connection multiplexing (direction, not final):** several MPD connections behind one combined API, so slow work never delays interactive work. For example:
-  - a _control_ connection for low-latency commands (play/pause/seek/volume) and reacting to state changes (`idle`);
-  - a _bulk_ connection (or pool) for long-running, non-essential work: queue/playlist windows, extended song info, searches.
-  - the exact number of connections and the scheduling policy are open.
+- **Connection multiplexing:** slow work must never delay interactive work. Now: the server uses two connections, one idling for state changes and one for commands (see "MPD bridge").
+  - Direction for the queue and playlists: queue windows and playlist listings get their own connection (or pool), so neither state updates nor commands queue behind them. The exact split and scheduling are decided with the live queue.
 - Large results (queue, playlists) are always requested in ranges/windows, never wholesale.
 
 ## Server (crates/lyrica)
@@ -29,14 +27,14 @@ Async MPD client library, independent of the web server.
 Thin bridge between the frontend and `lyrica-mpd`.
 
 - axum on tokio; serves the embedded frontend (rust-embed) and the frontend WebSocket at `ws` (relative to the page).
-- Configuration exclusively via CLI arguments (clap); no disk state.
+- Configuration via CLI arguments (clap), plus `LYRICA_MPD_PASSWORD` for the password; no disk state.
 - Plain HTTP; intended to sit behind Caddy. All frontend URLs are relative so a path prefix works, provided the page URL ends in `/`.
-- Setup-specific extensions live here or in `lyrica-mpd` as appropriate, e.g. album art from the HTTP mirror of the music library. Decided: the browser loads art directly from the mirror (no server hop, browser caching, no server bandwidth); the server only supplies the folder URL. Looking beyond the song's own folder (unlike MPD's `albumart`) is a possible later extension. Same for MPD's `httpd` audio stream: the browser plays it directly from `--stream-url`.
+- Setup-specific extensions live here or in `lyrica-mpd` as appropriate, e.g. album art from the HTTP mirror of the music library. Decided: the browser loads art directly from the mirror (no server hop, browser caching, no server bandwidth); the server only supplies the folder URL. Art is only ever looked for in the song's own folder (user decision). Same for MPD's `httpd` audio stream: the browser plays it directly from `--stream-url`.
 
 ### MPD bridge (`bridge.rs`, `ws.rs`)
 
-- **CLI:** `--mpd <host:port>` (default `127.0.0.1:6600`), optional `--mpd-password`, sent with `password` after every connect. Optional `--music-url <URL>`: base URL of the HTTP mirror of MPD's music directory (e.g. `https://webmusic.wwared.com/`; a missing trailing `/` is added); without it `folder` is always `null` and no art is shown. Optional `--stream-url <URL>`: MPD's `httpd` output (must be HTTPS when the page is, or it is blocked as mixed content); without it there is no play-here toggle.
-- **Idle connection:** a task owns one `Client`. It fetches `status` + `currentsong`, publishes the snapshot, then loops `idle(player, options)` → refetch → publish. Snapshot fetches run on this connection, so they never queue behind commands.
+- **CLI:** `--listen` (default `127.0.0.1:8080`), `--log` (`EnvFilter` syntax, default `info`). `--mpd <host:port>` (default `127.0.0.1:6600`), optional `--mpd-password` (or `LYRICA_MPD_PASSWORD`, which keeps it out of the process list), sent with `password` after every connect. Optional `--music-url <URL>`: base URL of the HTTP mirror of MPD's music directory (e.g. `https://webmusic.wwared.com/`; a missing trailing `/` is added); without it `folder` is always `null` and no art is shown. Optional `--stream-url <URL>`: MPD's `httpd` output (must be HTTPS when the page is, or it is blocked as mixed content); without it there is no play-here toggle.
+- **Idle connection:** a task owns one `Client`. It fetches `status` + `currentsong`, publishes the snapshot, then loops `idle(player, options, mixer)` → refetch → publish. Snapshot fetches run on this connection, so they never queue behind commands.
 - **Command connection:** a task owns a second `Client` and serves an `mpsc` of commands from all WS clients, serialized. MPD closes connections unused for `connection_timeout` (default 60 s), so on `Io`/`Broken` it reconnects and retries the command once; the closed connection never executed it. `Ack` is logged, not retried.
 - **Snapshot fan-out:** `tokio::sync::watch`. Each WS client gets the current snapshot on connect, then every change. While playing, `elapsed` is advanced to the send time, so late subscribers get the current position.
 - **MPD unreachable:** the idle task publishes an `offline` snapshot and reconnects with backoff (1 s doubling to 10 s). Commands sent while offline are dropped with a log line.
@@ -51,22 +49,27 @@ Thin bridge between the frontend and `lyrica-mpd`.
 
 Preact + TypeScript PWA built by Vite into `web/dist`, which is embedded into the server binary.
 
-UI direction:
+UI direction (implemented parts are detailed under "Now playing"; the rest is planned, see `roadmap.md`):
 
 - **Now playing, pinned to the bottom:** album art, title, artist, album, progress bar with the time beside it, then controls at the very bottom (previous, play/pause, next, with the play-here and volume toggles on the left and random/single/repeat toggles on the right). Every element has a fixed height so nothing moves when the song changes.
-- **Two modes, switched by a chevron:** full (large art above the title, the current now-playing screen) and mini (art left of title/artist/progress/transport, the queue above). Always opens in full mode; the switch is animated, smooth and unflashy.
+- **Two modes, switched by a chevron:** full (large art above the title) and mini (art left of title/artist/album/progress/transport, the queue above). Always opens in full mode; the switch is animated, smooth and unflashy.
 - **Progress bar:** updates smoothly and continuously during playback. Each `state` message anchors `elapsed` to the local receive time (`performance.now()`); while `play`, the bar shows `elapsed + (now − anchor)`, clamped to `duration`, redrawn every animation frame. Re-anchored by every state push (seek, pause, song change) and by the fresh snapshot after a reconnect. No polling.
-- **Rest of screen (above now playing, mini mode):** live queue (current MPD playlist), auto-scrolling and re-centering on the current song when it changes. Rendered virtually/windowed and loaded lazily to cope with 200k entries.
+- **Seeking (planned):** tap or drag on the progress bar seeks there (with a touch target taller than the bar, like the volume slider's); backward / forward buttons seek by a fixed step. Step size and where the buttons fit in the control strip are open.
+- **Live queue (planned; the area above now playing in mini mode is a placeholder):** the current MPD queue, read-only: no reordering, adding, removing or consume mode.
+  - Virtual list over the whole queue (200k entries): only rows near the viewport are rendered, with a fixed row height; entries are loaded in position windows on demand, far enough ahead in both directions that scrolling up or down never shows missing rows.
+  - Auto-centres on the current song when it opens and when the song changes, without fighting the user while they scroll; reloads when the queue changes (queue version).
   - Its own scroll container (`overflow-y: auto`), since the document never scrolls (see "Fixed viewport"), with `overscroll-behavior: contain` so its edge bounce doesn't chain to the page. Vertical panning stays allowed by the root `touch-action: pan-x pan-y`; don't set a narrower `touch-action` on it.
-  - Adjacent tracks from the same album are visually grouped (small gap/separator), with one album-art icon per group; no icon if the album has no art.
+  - Adjacent tracks from the same album are visually grouped (small gap/separator), with one cover per group, loaded lazily when visible; no cover if the album has none.
   - Per-track info: album, album/track artist, title, track number. Exact layout to be iterated on.
-- **Hidden settings menu:** stored-playlist view (list server playlists, clear the queue, load a playlist).
-- Slow data (cover art, queue windows, extended info) is fetched lazily and asynchronously; controls and now-playing never wait on it.
+  - Tapping a track plays it.
+- **Stored playlists (planned):** a dedicated button opens the list of server playlists; tapping one clears the queue and loads it. The only way lyrica changes the queue. No general settings menu.
+- Slow data (cover art, queue windows, playlist listings) is fetched lazily and asynchronously; controls and now playing never wait on it.
 - Light/dark mode follows the system preference.
+- **PWA:** installable from Safari (manifest, standalone display, iOS meta tags); no app icon yet. No service worker: the app needs the server and MPD to do anything, so offline launch is useless.
 
 ### Now playing (implemented)
 
-Built in phase 4 (milestone 1) and extended since. Covers album art, title, artist, album, play state, progress bar, previous / play-pause / next, random / single / repeat, MPD's volume, playing the `httpd` stream here, and the full / mini mode switch (the queue is still a placeholder).
+Covers album art, title, artist, album, play state, progress bar, previous / play-pause / next, random / single / repeat, MPD's volume, playing the `httpd` stream here, and the full / mini mode switch.
 
 - **`ws.ts`:** owns the socket and the protocol types (`Config`; `Snapshot`: a `state` message stamped with its `performance.now()` receive time; `Command`). Parses `config` and `state` messages (ignores anything else), exposes `send(command)` (dropped unless open). Reconnects 1 s after a close. On `visibilitychange` to visible, closes and reopens the socket: the server sends a fresh snapshot on connect (with `elapsed` advanced), which resyncs the bar and avoids zombie sockets after iOS suspends the page; `performance.now()` may not advance while the device sleeps.
 - **Offline:** a closed socket is displayed exactly like `state: "offline"`. Buttons are disabled while offline, except the play-here and volume toggles (the volume slider is disabled).
@@ -89,7 +92,7 @@ Built in phase 4 (milestone 1) and extended since. Covers album art, title, arti
 - **Title:** `title`, or a placeholder when `null`, in a fixed-height marquee line.
 - **Artist:** below the title, smaller and muted, same fixed-height marquee line; the album artist when the song has no artist (server-side); empty (height kept) when both are missing.
 - **Album:** below the artist, smaller still (13 px, the size of the time) and muted, same fixed-height marquee line; empty (height kept) when `null`. Spans the full row width (the chevron is beside title and artist only). Added without growing the section: the time moved onto the bar's row, freeing its line.
-- **Progress:** the pure `position(snapshot, now)` (`progress.ts`, Vitest) computes the displayed seconds. A `requestAnimationFrame` loop runs only while playing and writes the bar (`transform: scaleX`) and the `m:ss / m:ss` text directly through refs, the text only when it changes, so Preact does not re-render per frame. `duration` `null` (streams): empty bar, elapsed text only. No seeking by tapping the bar (the protocol has no seek).
+- **Progress:** the pure `position(snapshot, now)` (`progress.ts`, Vitest) computes the displayed seconds. A `requestAnimationFrame` loop runs only while playing and writes the bar (`transform: scaleX`) and the `m:ss / m:ss` text directly through refs, the text only when it changes, so Preact does not re-render per frame. `duration` `null` (streams): empty bar, elapsed text only. Display only: no seeking yet (planned, see "Seeking" above).
   - **Time beside the bar:** one 1rem row, the bar (`flex: 1`) vertically centred, the time right-aligned at the row's end. Its box has a fixed width, set by an invisible sizer text in the same grid cell (`timeSizer` in `app.tsx`): `00:00 / 00:00` (90 px), which fits every time under an hour (digits are tabular), and also any stream's elapsed time; `0:00:00 / 0:00:00` from a 1 h duration, `00:00:00 / 00:00:00` from 10 h. So ticking never changes the bar's length; only a song of an hour or more widens the box. Bar: 248 px in full mode at 390 px; 60 px in mini (45 at 375), the cost of the time sharing the narrow column.
 - **Layout:** single column for iPhone portrait; `.app` is a full-height (`--app-height`, see below) flex column: the playlist area (`flex: 1`) above the now-playing section, so progress bar and controls stay at fixed positions at the bottom. Touch targets ≥ 44 px tall, safe-area padding, colours from the CSS variables (light/dark).
 - **Fixed viewport:** the document never scrolls or zooms: `html`/`body` have `overflow: hidden`, `overscroll-behavior: none` (no rubber-band bounce in iOS Safari ≥ 16, no overscroll stretch or pull-to-refresh in Chrome) and `touch-action: pan-x pan-y` (no pinch or double-tap zoom; a descendant's effective `touch-action` is intersected with its ancestors', so it covers the whole page). iOS Safari (since iOS 10) ignores `user-scalable=no` and `maximum-scale` for pinch zoom, so the viewport meta doesn't set them. Lists that scroll (the queue) must be their own scroll containers. Future text inputs need `font-size` ≥ 16 px, or iOS zooms in on focus.
@@ -102,7 +105,7 @@ Built in phase 4 (milestone 1) and extended since. Covers album art, title, arti
   - **No overflow:** going to full mode, the full-width rows start at their mini offset, past the right edge; `.app` has `overflow: clip` (no scroll container), which stops desktop browsers from flashing a horizontal scrollbar.
 - **Font:** Iosevka Aile everywhere, Regular (400) and SemiBold (600, title). The woff2 files come from the upstream `PkgWebFont-IosevkaAile` release (nixpkgs has only TTF/TTC builds; converting those or building Iosevka from source were the alternatives), fetched by the flake and bundled by Vite under hashed `assets/` names, so they are cached immutably after the first load (~1.6 MB per weight, unsubset). `font-display: swap`; the fixed line heights keep the swap from moving anything.
 
-Phase 4 verification, in headless Chromium (390×844) against the local MPD, timed from the action to the DOM change: `mpc` pause/play/seek/next/prev 2–4 ms; button toggle/next/previous 2 ms. The bar advances every frame (62 samples/s, monotonic) and holds still while paused. Killing the proxy or the server shows offline with disabled buttons; after a server restart the UI recovers within the 1 s retry (353 ms observed). After freezing the page (Chrome closed the socket) and seeking meanwhile, the visibility event opened one new socket and the bar matched MPD within 3 ms.
+Basic now playing, in headless Chromium (390×844) against the local MPD, timed from the action to the DOM change: `mpc` pause/play/seek/next/prev 2–4 ms; button toggle/next/previous 2 ms. The bar advances every frame (62 samples/s, monotonic) and holds still while paused. Killing the proxy or the server shows offline with disabled buttons; after a server restart the UI recovers within the 1 s retry (353 ms observed). After freezing the page (Chrome closed the socket) and seeking meanwhile, the visibility event opened one new socket and the bar matched MPD within 3 ms.
 
 Bottom layout: title, progress bar and controls kept identical positions across a song change, and an 880 px wide title stayed 28 px tall.
 

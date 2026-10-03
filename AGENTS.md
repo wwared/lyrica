@@ -34,5 +34,5 @@ Commit often, without asking, during autonomous work: each commit is one self-co
 
 - `goals.md` — goals, constraints, non-goals, stack
 - `architecture.md` — components, data flow, design direction
-- `roadmap.md` — phases, current milestone, backlog
+- `roadmap.md` — current state, next phases as small steps
 - `development.md` — commands, layout, embedding, dependencies
