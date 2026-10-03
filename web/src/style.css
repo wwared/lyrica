@@ -51,7 +51,9 @@ body {
   color: var(--fg);
 }
 
+/* Positioned: contains the full-mode art. */
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -90,7 +92,18 @@ body {
   /* Every row: title 1.75rem + 4px, artist 1.25rem + 20px, progress
      4px + 8px + 1rem, controls 16px + 56px. */
   --mini-art: calc(4rem + 108px);
-  position: relative;
+  /* The section's height: rows plus the 24 px top and bottom padding. */
+  --section: calc(var(--mini-art) + 48px);
+  /* Edge to edge, capped (larger screens), and on short screens leaving
+     20 px above and below. `vw`, not `%`: it is used for the height too,
+     where `%` means the container's height. The page never scrolls, so no
+     scrollbar is included. */
+  --full-art: min(
+    100vw,
+    600px,
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+      var(--section) - 40px
+  );
   display: grid;
   grid-template-columns: minmax(0, 1fr) 24px;
   grid-template-areas:
@@ -112,16 +125,17 @@ body {
     "art controls controls";
 }
 
-/* Full: centred above the title with a 20 px gap (the padding is 24 px).
-   Square whatever the image's shape; capped so short screens keep room above. */
+/* Full: centred both ways in the space above the section, positioned against
+   `.app`. Square whatever the image's shape. */
 .art {
   position: absolute;
-  bottom: calc(100% - 4px);
+  top: env(safe-area-inset-top);
+  bottom: calc(env(safe-area-inset-bottom) + var(--section));
   left: 0;
   right: 0;
-  width: min(100% - 40px, 45dvh);
-  aspect-ratio: 1;
-  margin: 0 auto;
+  width: var(--full-art);
+  height: var(--full-art);
+  margin: auto;
 }
 
 /* Mini: left-anchored, as tall as the whole section's content. */
@@ -129,6 +143,8 @@ body {
   position: static;
   grid-area: art;
   width: var(--mini-art);
+  height: var(--mini-art);
+  margin: 0;
 }
 
 .art img {
