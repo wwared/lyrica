@@ -74,14 +74,8 @@ export function App() {
           <Marquee text={snapshot?.album ?? ""} />
         </p>
         <Progress snapshot={snapshot} />
-        <Volume
-          open={volumeOpen}
-          volume={snapshot?.volume ?? null}
-          disabled={disabled}
-          onChange={(volume) => send({ type: "volume", volume })}
-        />
         {/* Three columns so the transport stays centred whatever is beside it. */}
-        <div class="controls">
+        <div class={streamUrl === null ? "controls" : "controls stream"}>
           <div class="extras">
             {streamUrl !== null && (
               <button
@@ -100,6 +94,12 @@ export function App() {
               <Icon path={VOLUME} />
             </button>
           </div>
+          <Volume
+            open={volumeOpen}
+            volume={snapshot?.volume ?? null}
+            disabled={disabled}
+            onChange={(volume) => send({ type: "volume", volume })}
+          />
           <div class="transport">
             <button
               data-flip="move"

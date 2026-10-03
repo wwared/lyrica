@@ -270,30 +270,45 @@ body {
   visibility: hidden;
 }
 
-/* Over the album and progress rows while open, hiding them. Only reachable in
-   full mode (the toggle is hidden in mini). */
+/* A pill growing right from the volume toggle over the rest of the control
+   strip; the toggle stays on top, inside its left end. Only reachable in full
+   mode (the toggle is hidden in mini). */
 .volume {
-  grid-row: album-start / progress-end;
-  grid-column: album-start / album-end;
+  grid-column: 1 / -1;
+  justify-self: start;
   z-index: 1;
   display: flex;
   align-items: center;
   gap: 12px;
+  /* From the toggle's left edge (`.extras` margin) to the strip's end. */
+  width: calc(100% + 10px);
+  max-width: 360px;
+  height: 44px;
+  margin-left: -10px;
+  padding: 0 18px 0 56px;
+  border: 1px solid var(--muted);
+  border-radius: 22px;
   background: var(--bg);
-  opacity: 0;
+  clip-path: inset(0 calc(100% - 44px) 0 0 round 22px);
   visibility: hidden;
   transition:
-    opacity 150ms var(--switch-ease),
-    visibility 0s 150ms;
+    clip-path 200ms var(--switch-ease),
+    visibility 0s 200ms;
+}
+
+/* Past the play-here toggle. */
+.stream .volume {
+  width: calc(100% - 34px);
+  margin-left: 34px;
 }
 
 .volume.open {
-  opacity: 1;
+  clip-path: inset(0 round 22px);
   visibility: visible;
-  transition: opacity 150ms var(--switch-ease);
+  transition: clip-path 200ms var(--switch-ease);
 }
 
-/* The whole band's height is the touch target. */
+/* The pill's height is the touch target. */
 .slider {
   flex: 1;
   align-self: stretch;
@@ -340,6 +355,11 @@ body {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   margin-top: 16px;
+}
+
+/* One row, also for the volume pill overlapping the others. */
+.controls > * {
+  grid-row: 1;
 }
 
 .transport {
@@ -439,6 +459,7 @@ body {
 .extras {
   grid-column: 1;
   justify-self: start;
+  z-index: 2;
   display: flex;
   margin-left: -10px;
 }

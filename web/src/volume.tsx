@@ -8,8 +8,8 @@ const HOLD_MS = 1000;
 const STEP = 5;
 
 /**
- * MPD's volume: a band over the album and progress rows, shown while `open`.
- * Tap or drag anywhere on it.
+ * MPD's volume: a pill over the control strip, shown while `open`. Tap or
+ * drag anywhere on it.
  */
 export function Volume({
   open,
