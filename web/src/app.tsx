@@ -27,7 +27,7 @@ export function App() {
   return (
     <main class="app">
       <section class="now-playing">
-        <Art folder={snapshot?.folder ?? null} />
+        <Art folder={snapshot === null ? undefined : snapshot.folder} />
         <h1 class={snapshot?.title ? "title" : "title placeholder"}>
           <Marquee text={heading} />
         </h1>
@@ -81,26 +81,34 @@ export function App() {
 }
 
 /**
- * Same folder, same image: a track change within an album changes nothing.
- * A new folder shows the placeholder until its cover is found and decoded.
+ * `folder` is `undefined` before the first snapshot. While the cover is
+ * unknown the square stays empty (background only); then the cover, or the
+ * placeholder when there is none. Same folder, same image: a track change
+ * within an album changes nothing.
  */
-function Art({ folder }: { folder: string | null }) {
-  // Only triggers the re-render; the URL itself is read from `covers`.
-  const [, setFound] = useState<string | null>(null);
+function Art({ folder }: { folder: string | null | undefined }) {
+  // Only triggers the re-render; the result itself is read from `covers`.
+  const [, setProbed] = useState<string | null>(null);
   useEffect(() => {
-    if (folder === null || covers.has(folder)) return;
+    if (!folder || covers.has(folder)) return;
     let current = true;
-    findCover(folder).then((url) => {
-      if (current && url !== null) setFound(url);
+    findCover(folder).then(() => {
+      if (current) setProbed(folder);
     });
     return () => {
       current = false;
     };
   }, [folder]);
 
+  const cover =
+    folder === undefined
+      ? undefined
+      : folder === null
+        ? null
+        : covers.get(folder);
   return (
     <div class="art">
-      <img src={(folder !== null && covers.get(folder)) || noCover} alt="" />
+      {cover !== undefined && <img src={cover ?? noCover} alt="" />}
     </div>
   );
 }

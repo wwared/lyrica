@@ -3,9 +3,13 @@ const NAMES = ["jpg", "JPG", "png", "PNG", "jpeg", "JPEG"].map(
   (ext) => `cover.${ext}`,
 );
 
-const found = new Map<string, string>();
-/** Found covers by folder URL; misses are not kept, so a later probe can still find one. */
-export const covers: ReadonlyMap<string, string> = found;
+const known = new Map<string, string | null>();
+/**
+ * Probe results by folder URL: the cover URL, or `null` when there is none.
+ * Misses are kept too, so revisiting a folder never shows the blank loading
+ * state again; a cover added to the mirror appears after a reload.
+ */
+export const covers: ReadonlyMap<string, string | null> = known;
 
 /**
  * Probes all candidate names at once (one round trip instead of up to six)
@@ -25,9 +29,10 @@ export async function findCover(folder: string): Promise<string | null> {
   for (const probe of probes) {
     const url = await probe;
     if (url !== null) {
-      found.set(folder, url);
+      known.set(folder, url);
       return url;
     }
   }
+  known.set(folder, null);
   return null;
 }
