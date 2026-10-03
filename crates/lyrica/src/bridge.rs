@@ -217,7 +217,7 @@ async fn fetch(client: &mut Client, music_url: Option<&str>) -> Result<Snapshot>
         artist: song
             .as_mut()
             .and_then(|s| s.artist.take().or_else(|| s.album_artist.take())),
-        album: song.as_mut().and_then(|s| s.album.take()),
+        album: song.as_mut().and_then(album),
         folder: music_url
             .zip(song.as_ref())
             .and_then(|(m, s)| folder(m, &s.file)),
@@ -237,6 +237,18 @@ fn title(song: Song) -> String {
             Some((_, name)) => name.to_owned(),
             None => song.file,
         })
+}
+
+/// The `Album` tag, falling back to the name of the file's folder; `None` for
+/// streams and files at the top of the music directory.
+fn album(song: &mut Song) -> Option<String> {
+    song.album.take().or_else(|| {
+        if song.file.contains("://") {
+            return None;
+        }
+        let (dir, _) = song.file.rsplit_once('/')?;
+        Some(dir.rsplit('/').next().unwrap_or(dir).to_owned())
+    })
 }
 
 /// URL of the folder holding `file` under `music_url` (ending in `/`);
@@ -435,10 +447,9 @@ mod tests {
         assert_eq!(folder(m, "http://radio/stream"), None);
     }
 
-    #[test]
-    fn title_falls_back_to_file_name() {
-        let song = Song {
-            file: "a/b/c.flac".into(),
+    fn song(file: &str) -> Song {
+        Song {
+            file: file.into(),
             title: None,
             artist: None,
             album_artist: None,
@@ -446,8 +457,23 @@ mod tests {
             duration: None,
             position: None,
             id: None,
-        };
-        assert_eq!(title(song), "c.flac");
+        }
+    }
+
+    #[test]
+    fn title_falls_back_to_file_name() {
+        assert_eq!(title(song("a/b/c.flac")), "c.flac");
+    }
+
+    #[test]
+    fn album_falls_back_to_folder_name() {
+        let mut tagged = song("a/b/c.flac");
+        tagged.album = Some("al".into());
+        assert_eq!(album(&mut tagged).as_deref(), Some("al"));
+        assert_eq!(album(&mut song("a/b/c.flac")).as_deref(), Some("b"));
+        assert_eq!(album(&mut song("b/c.flac")).as_deref(), Some("b"));
+        assert_eq!(album(&mut song("c.flac")), None);
+        assert_eq!(album(&mut song("http://radio/a/stream")), None);
     }
 
     async fn accept(listener: &TcpListener) -> BufReader<tokio::net::TcpStream> {
