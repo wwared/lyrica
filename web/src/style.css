@@ -25,6 +25,9 @@
     -apple-system,
     sans-serif;
   -webkit-text-size-adjust: 100%;
+  /* App, not document: nothing is selectable (text or the cover). */
+  -webkit-user-select: none;
+  user-select: none;
   /* Mode switch; SWITCH_MS / SWITCH_EASE in app.tsx match. */
   --switch-ms: 350ms;
   --switch-ease: cubic-bezier(0.4, 0, 0.2, 1);
