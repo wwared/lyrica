@@ -15,7 +15,7 @@ End-to-end, bare basics only: the currently playing song title, a smooth progres
 
 ## After milestone 1
 
-Done: now playing pinned to the bottom with fixed-height lines; artist line; bouncing marquee for long text; Iosevka Aile font; album art (`cover.*` in the song's folder on the HTTP mirror, via `--music-url`); random / single / repeat toggles. Details in `architecture.md` → "Now playing".
+Done: now playing pinned to the bottom with fixed-height lines; artist line; bouncing marquee for long text; Iosevka Aile font; album art (`cover.*` in the song's folder on the HTTP mirror, via `--music-url`; empty while loading); random / single / repeat toggles; animated full / mini mode switch (queue still a placeholder). Details in `architecture.md` → "Now playing".
 
 ## Backlog (roughly in order)
 

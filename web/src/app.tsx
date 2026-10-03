@@ -1,3 +1,4 @@
+import type { RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import noCover from "./assets/no-cover.png";
 import { covers, findCover } from "./cover";
@@ -23,15 +24,34 @@ export function App() {
       : offline
         ? "Offline"
         : (snapshot.title ?? "Nothing playing");
+  const [mini, setMini] = useState(false);
+  const nowPlaying = useRef<HTMLElement>(null);
+  const capture = useFlip(nowPlaying, mini);
 
   return (
-    <main class="app">
-      <section class="now-playing">
+    <main class={mini ? "app mini" : "app"}>
+      <section class="playlist" aria-hidden={!mini}>
+        <p class="placeholder">Playlist</p>
+      </section>
+      <section class="now-playing" ref={nowPlaying}>
         <Art folder={snapshot === null ? undefined : snapshot.folder} />
-        <h1 class={snapshot?.title ? "title" : "title placeholder"}>
+        <h1
+          class={snapshot?.title ? "title" : "title placeholder"}
+          data-flip="move"
+        >
           <Marquee text={heading} />
         </h1>
-        <p class="artist">
+        <button
+          class="switch"
+          aria-label={mini ? "Full player" : "Playlist"}
+          onClick={() => {
+            capture();
+            setMini(!mini);
+          }}
+        >
+          <Icon path={EXPAND} />
+        </button>
+        <p class="artist" data-flip="move">
           <Marquee text={snapshot?.artist ?? ""} />
         </p>
         <Progress snapshot={snapshot} />
@@ -80,6 +100,61 @@ export function App() {
   );
 }
 
+// Matches --switch-ms / --switch-ease in style.css (playlist fade, chevron).
+const SWITCH_MS = 350;
+const SWITCH_EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
+
+/**
+ * FLIP animation for a layout switch. Call the returned `capture` just
+ * before changing `key`: it records where each `[data-flip]` element in
+ * `root` is drawn. After the re-render each one animates from there to its
+ * new place with transforms only, so it runs on the compositor.
+ * `data-flip="scale"` also scales (art, bar); `"move"` only translates, so
+ * text never stretches.
+ */
+function useFlip(root: RefObject<HTMLElement | null>, key: unknown) {
+  const from = useRef<Map<HTMLElement, DOMRect> | null>(null);
+
+  useLayoutEffect(() => {
+    const first = from.current;
+    from.current = null;
+    if (first === null) return;
+    for (const [element, before] of first) {
+      const after = element.getBoundingClientRect();
+      const scale = element.dataset.flip === "scale";
+      const sx = scale ? before.width / after.width : 1;
+      const sy = scale ? before.height / after.height : 1;
+      const dx = before.left - after.left;
+      const dy = before.top - after.top;
+      element.animate(
+        [
+          {
+            transformOrigin: "0 0",
+            transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
+          },
+          { transformOrigin: "0 0", transform: "none" },
+        ],
+        { duration: SWITCH_MS, easing: SWITCH_EASE },
+      );
+    }
+  }, [key]);
+
+  return () => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const elements = Array.from(
+      root.current!.querySelectorAll<HTMLElement>("[data-flip]"),
+    );
+    // Measured before cancelling: a switch mid-animation starts from where
+    // things are drawn, so it reverses smoothly.
+    from.current = new Map(
+      elements.map((element) => [element, element.getBoundingClientRect()]),
+    );
+    for (const element of elements) {
+      for (const animation of element.getAnimations()) animation.cancel();
+    }
+  };
+}
+
 /**
  * `folder` is `undefined` before the first snapshot. While the cover is
  * unknown the square stays empty (background only); then the cover, or the
@@ -107,7 +182,7 @@ function Art({ folder }: { folder: string | null | undefined }) {
         ? null
         : covers.get(folder);
   return (
-    <div class="art">
+    <div class="art" data-flip="scale">
       {cover !== undefined && <img src={cover ?? noCover} alt="" />}
     </div>
   );
@@ -141,10 +216,10 @@ function Progress({ snapshot }: { snapshot: Snapshot | null }) {
 
   return (
     <div class="progress">
-      <div class="track">
+      <div class="track" data-flip="scale">
         <div class="fill" ref={fill} />
       </div>
-      <p class="time" ref={time} />
+      <p class="time" ref={time} data-flip="move" />
     </div>
   );
 }
@@ -153,6 +228,8 @@ const PREVIOUS = "M6 6h2v12H6zM9.5 12 18 6v12z";
 const PLAY = "M8 5v14l11-7z";
 const PAUSE = "M6 5h4v14H6zM14 5h4v14h-4z";
 const NEXT = "M16 6h2v12h-2zM6 18l8.5-6L6 6z";
+// Material Icons (Apache 2.0): expand_more; points up (rotated) in mini mode.
+const EXPAND = "M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z";
 // Material Icons (Apache 2.0): shuffle, looks_one (outlined), repeat.
 const MODES = [
   {
