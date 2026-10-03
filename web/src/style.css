@@ -49,10 +49,13 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  /* App-like fixed viewport: no rubber-band bounce, overscroll stretch or
-     pull-to-refresh. Scrolling lists scroll inside their own containers. */
+  /* App-like fixed viewport: no rubber-band bounce, overscroll stretch,
+     pull-to-refresh or zoom. Scrolling lists scroll inside their own
+     containers. `touch-action` because iOS ignores `user-scalable=no`; it
+     also applies to descendants. */
   overflow: hidden;
   overscroll-behavior: none;
+  touch-action: pan-x pan-y;
 }
 
 /* iOS rubber-bands the document even when it doesn't overflow and ignores

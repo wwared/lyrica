@@ -21,7 +21,7 @@ Done: now playing pinned to the bottom with fixed-height lines; artist line; bou
 
 - More song info in now playing (album, …).
 - Volume.
-- Live queue view: windowed loading, re-centering, album grouping, lazy cover art.
+- Live queue view: windowed loading, re-centering, album grouping, lazy cover art. Own scroll container with `overscroll-behavior: contain` (the page is fixed; see `architecture.md` → "Fixed viewport").
 - Album art beyond the song's own folder on the HTTP mirror.
 - Settings menu: httpd stream playback, stored playlists (list, clear queue, load).
 - PWA polish: icons, offline shell.
