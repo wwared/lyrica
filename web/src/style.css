@@ -114,13 +114,16 @@ body {
 
 /* `contain`: the edge bounce stays in the list instead of reaching the page.
    No `touch-action` here; the root's `pan-x pan-y` already allows panning.
-   `overflow-anchor: none`: Chrome's scroll anchoring would fight re-anchoring. */
+   `overflow-anchor: none`: Chrome's scroll anchoring would fight re-anchoring.
+   No scrollbar: it spans the bounded scroll space, not the queue, so dragging
+   it lands on arbitrary positions and re-anchors under the pointer. */
 .queue-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
+  scrollbar-width: none;
 }
 
 .queue-space {
