@@ -1,4 +1,5 @@
 import { useLayoutEffect, useReducer, useRef } from "preact/hooks";
+import { covers, findCover } from "./cover";
 import { formatTime } from "./progress";
 import type { QueueStore } from "./queue-store";
 import {
@@ -79,6 +80,9 @@ export function QueueList({
     let frame = 0;
     let settle = 0;
     let touches = 0;
+    // No scroll for SETTLE_MS and no touch held: covers may be probed.
+    let still = false;
+    let disposed = false;
     // User input on the list stops auto-centring until `resume` fires.
     let paused = false;
     let resume = 0;
@@ -103,6 +107,32 @@ export function QueueList({
       const pool = poolSize(v.viewportPx, v.length);
       if (v.stale || firstRow(v.scrollTop, pool, v.length) !== v.first)
         render(0);
+      probe();
+    };
+    // A miss shows nothing new: the track number stays.
+    const arrived = (cover: string | null) => {
+      if (cover === null || disposed) return;
+      v.stale = true;
+      if (frame === 0) frame = requestAnimationFrame(pass);
+    };
+    // Visible group starts only, not the pool's margin rows.
+    const probe = () => {
+      if (!still || !store.shown) return;
+      const offset = v.anchor * ROW_PX + v.scrollTop;
+      const last = Math.min(
+        v.length,
+        Math.ceil((offset + v.viewportPx) / ROW_PX),
+      );
+      for (let p = Math.floor(offset / ROW_PX); p < last; p++) {
+        const folder = store.entry(p)?.folder;
+        if (folder && !covers.has(folder) && store.starts(p))
+          findCover(folder).then(arrived);
+      }
+    };
+    const unsettle = () => {
+      still = false;
+      clearTimeout(settle);
+      settle = setTimeout(settled, SETTLE_MS);
     };
     // `stored` and `current` never render here: they come from the socket's
     // message handler, ahead of now playing's render.
@@ -124,6 +154,7 @@ export function QueueList({
         centred();
         report();
         render(0);
+        unsettle();
       },
     });
     const resumed = () => {
@@ -143,25 +174,27 @@ export function QueueList({
     };
     const settled = () => {
       if (touches > 0) return;
+      still = true;
       const next = reanchor(v.anchor, el.scrollTop, v.length);
-      if (next === null) return;
-      place(next);
-      render(0);
+      if (next !== null) {
+        place(next);
+        render(0);
+      }
+      probe();
     };
     const onScroll = () => {
       if (frame === 0) frame = requestAnimationFrame(pass);
-      clearTimeout(settle);
-      settle = setTimeout(settled, SETTLE_MS);
+      unsettle();
       if (paused) wait();
     };
     const onTouchStart = (e: TouchEvent) => {
       touches = e.touches.length;
+      still = false;
       pause();
     };
     const onTouchEnd = (e: TouchEvent) => {
       touches = e.touches.length;
-      clearTimeout(settle);
-      settle = setTimeout(settled, SETTLE_MS);
+      unsettle();
       if (paused) wait();
     };
     // Middle-click autoscroll.
@@ -171,6 +204,7 @@ export function QueueList({
     const resized = new ResizeObserver((entries) => {
       v.viewportPx = entries[0]!.contentRect.height;
       render(0);
+      probe();
     });
     resized.observe(el);
     const passive = { passive: true };
@@ -182,6 +216,7 @@ export function QueueList({
     el.addEventListener("pointerdown", onPointerDown, passive);
     el.addEventListener("keydown", pause, passive);
     return () => {
+      disposed = true;
       unsubscribe();
       cancelAnimationFrame(frame);
       clearTimeout(settle);
@@ -209,9 +244,13 @@ export function QueueList({
     const artist = entry?.artist;
     const album = entry?.album;
     const duration = entry?.duration;
+    const starts = store.starts(position);
+    const cover =
+      starts && entry!.folder ? covers.get(entry!.folder) : undefined;
     let className = "queue-row";
     if (currentId !== null && entry?.id === currentId) className += " current";
-    if (position > 0 && store.starts(position)) className += " group";
+    if (position > 0 && starts) className += " group";
+    if (cover) className += " cover";
     rows.push(
       <div
         key={slot}
@@ -222,6 +261,12 @@ export function QueueList({
         style={{ transform: `translateY(${(position - v.anchor) * ROW_PX}px)` }}
       >
         <span class="queue-track">{entry?.track ?? ""}</span>
+        <img
+          class="queue-cover"
+          alt=""
+          decoding="async"
+          src={cover ?? undefined}
+        />
         <span class="queue-title">{entry?.title ?? ""}</span>
         <span class="queue-info">
           {artist && album ? `${artist} · ${album}` : (artist ?? album ?? "")}

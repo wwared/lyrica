@@ -131,8 +131,8 @@ body {
   position: relative;
 }
 
-/* Height: ROW_PX in virtual.ts. Every row always holds the same four
-   elements, so filling one only changes text. */
+/* Height: ROW_PX in virtual.ts. Every row always holds the same five
+   elements, so filling one only changes text and `src`. */
 .queue-row {
   position: absolute;
   top: 0;
@@ -142,7 +142,7 @@ body {
   grid-template:
     "track title time" 1.25rem
     "track info time" 1.125rem
-    / 1.5rem minmax(0, 1fr) auto;
+    / 40px minmax(0, 1fr) auto;
   align-content: center;
   column-gap: 12px;
   height: 56px;
@@ -160,15 +160,33 @@ body {
   content: "";
 }
 
-/* Four digits overflow left, into the padding, instead of into the title. */
 .queue-track {
   grid-area: track;
   align-self: center;
-  justify-self: end;
+  justify-self: center;
   color: var(--muted);
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* Overlaps the track number, so showing it moves nothing; overflows the
+   38 px of the two lines by 1 px each way, centred in the 56 px row. */
+.queue-cover {
+  grid-area: track;
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  visibility: hidden;
+}
+
+.queue-row.cover > .queue-cover {
+  visibility: visible;
+}
+
+.queue-row.cover > .queue-track {
+  visibility: hidden;
 }
 
 .queue-title,

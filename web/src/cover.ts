@@ -11,13 +11,26 @@ const known = new Map<string, string | null>();
  */
 export const covers: ReadonlyMap<string, string | null> = known;
 
+const probes = new Map<string, Promise<string | null>>();
+
 /**
  * Probes all candidate names at once (one round trip instead of up to six)
  * and resolves to the first in priority order that loads and decodes, or
  * `null`. Decoding first means the visible `<img>` paints it immediately.
+ * Each folder is probed once: later calls get the same promise, so the queue
+ * and now playing share a probe still in flight.
  */
-export async function findCover(folder: string): Promise<string | null> {
-  const probes = NAMES.map((name) => {
+export function findCover(folder: string): Promise<string | null> {
+  let found = probes.get(folder);
+  if (found === undefined) {
+    found = probe(folder);
+    probes.set(folder, found);
+  }
+  return found;
+}
+
+async function probe(folder: string): Promise<string | null> {
+  const candidates = NAMES.map((name) => {
     const url = folder + name;
     const image = new Image();
     image.src = url;
@@ -26,8 +39,8 @@ export async function findCover(folder: string): Promise<string | null> {
       () => null,
     );
   });
-  for (const probe of probes) {
-    const url = await probe;
+  for (const candidate of candidates) {
+    const url = await candidate;
     if (url !== null) {
       known.set(folder, url);
       return url;
