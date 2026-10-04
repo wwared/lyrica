@@ -1,9 +1,16 @@
 import type { RefObject } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
 import noCover from "./assets/no-cover.png";
 import { covers, findCover } from "./cover";
 import { Marquee } from "./marquee";
 import { formatTime, position } from "./progress";
+import { QueueList } from "./queue";
 import { useStream } from "./stream";
 import { Volume } from "./volume";
 import { useWakeLock } from "./wake";
@@ -44,12 +51,19 @@ export function App() {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const nowPlaying = useRef<HTMLElement>(null);
   const capture = useFlip(nowPlaying, mini);
+  // The same element while the length holds, so Preact skips the list on
+  // every other state push.
+  const queueLength = snapshot?.queue?.length ?? 0;
+  const queueList = useMemo(
+    () => <QueueList length={queueLength} />,
+    [queueLength],
+  );
 
   return (
     <main class={mini ? "app mini" : "app"}>
       <section class="queue" aria-hidden={!mini}>
         <div class="toolbar" />
-        <div class="queue-list" />
+        {queueList}
       </section>
       <section class="now-playing" ref={nowPlaying}>
         <Art cover={cover} />

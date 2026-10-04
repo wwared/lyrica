@@ -113,12 +113,27 @@ body {
 }
 
 /* `contain`: the edge bounce stays in the list instead of reaching the page.
-   No `touch-action` here; the root's `pan-x pan-y` already allows panning. */
+   No `touch-action` here; the root's `pan-x pan-y` already allows panning.
+   `overflow-anchor: none`: Chrome's scroll anchoring would fight re-anchoring. */
 .queue-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+
+.queue-space {
+  position: relative;
+}
+
+/* Height: ROW_PX in virtual.ts. */
+.queue-row {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 56px;
 }
 
 /* Pinned to the bottom, with fixed-height children, so nothing moves when the
