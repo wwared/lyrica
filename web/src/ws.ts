@@ -51,8 +51,45 @@ export type Command =
 export type Connection = {
   /** Dropped unless the socket is open. */
   send(command: Command): void;
+  /** Stored playlist names, sorted; `null` when listing failed. */
+  playlists(): Promise<string[] | null>;
+  /** Replaces the queue with a stored playlist: `null`, or why it failed. */
+  load(name: string): Promise<string | null>;
   close(): void;
 };
+
+export const NOT_CONNECTED = "Not connected";
+// The server keeps going: only the reply is lost.
+export const CONNECTION_LOST = "Connection lost; the load may still finish";
+
+/** Replies awaited from the server; `lost` settles them all. */
+export function requests() {
+  let listings: ((names: string[] | null) => void)[] = [];
+  let loads: { name: string; resolve: (error: string | null) => void }[] = [];
+  const listed = (names: string[] | null) => {
+    const waiting = listings;
+    listings = [];
+    for (const resolve of waiting) resolve(names);
+  };
+  return {
+    listing: () =>
+      new Promise<string[] | null>((resolve) => listings.push(resolve)),
+    load: (name: string) =>
+      new Promise<string | null>((resolve) => loads.push({ name, resolve })),
+    /** Any listing answers them all: they ask the same question. */
+    listed,
+    loaded(name: string, error: string | null) {
+      const i = loads.findIndex((l) => l.name === name);
+      if (i >= 0) loads.splice(i, 1)[0]!.resolve(error);
+    },
+    lost() {
+      listed(null);
+      const waiting = loads;
+      loads = [];
+      for (const { resolve } of waiting) resolve(CONNECTION_LOST);
+    },
+  };
+}
 
 const RETRY_MS = 1000;
 
@@ -71,6 +108,7 @@ export function connect(
 
   let socket: WebSocket;
   let retry: number | undefined;
+  const pending = requests();
 
   const open = () => {
     socket = new WebSocket(url);
@@ -85,12 +123,16 @@ export function connect(
       if ("stream" in message) onConfig(message);
       else if ("songs" in message)
         store.reply(message.version, message.start, message.songs);
+      else if ("names" in message) pending.listed(message.names);
+      else if ("loaded" in message)
+        pending.loaded(message.loaded, message.error);
       else {
         store.state(message.queue);
         onSnapshot(message);
       }
     };
     socket.onclose = () => {
+      pending.lost();
       store.state(null);
       onSnapshot({
         state: "offline",
@@ -111,10 +153,12 @@ export function connect(
     };
   };
 
+  // Also from `onVisibility`, which detaches `onclose` first.
   const shutdown = () => {
     window.clearTimeout(retry);
     socket.onopen = socket.onmessage = socket.onclose = null;
     socket.close();
+    pending.lost();
   };
 
   // iOS suspends hidden pages, leaving the socket dead or silently stale and the
@@ -128,10 +172,22 @@ export function connect(
   open();
   document.addEventListener("visibilitychange", onVisibility);
 
+  const isOpen = () => socket.readyState === WebSocket.OPEN;
   return {
     send(command) {
-      if (socket.readyState === WebSocket.OPEN)
-        socket.send(JSON.stringify(command));
+      if (isOpen()) socket.send(JSON.stringify(command));
+    },
+    playlists() {
+      if (!isOpen()) return Promise.resolve(null);
+      const names = pending.listing();
+      socket.send(JSON.stringify({ type: "playlists" }));
+      return names;
+    },
+    load(name) {
+      if (!isOpen()) return Promise.resolve(NOT_CONNECTED);
+      const error = pending.load(name);
+      socket.send(JSON.stringify({ type: "load", name }));
+      return error;
     },
     close() {
       document.removeEventListener("visibilitychange", onVisibility);
@@ -141,11 +197,13 @@ export function connect(
 }
 
 type Reply = { version: number; start: number; songs: Entry[] | null };
+type Listing = { names: string[] | null };
+type Loaded = { loaded: string; error: string | null };
 
 function parse(
   data: unknown,
   at: number,
-): Snapshot | Config | Reply | undefined {
+): Snapshot | Config | Reply | Listing | Loaded | undefined {
   if (typeof data !== "string") return;
   let message;
   try {
@@ -158,6 +216,9 @@ function parse(
     const { version, start, songs } = message;
     return { version, start, songs };
   }
+  if (message?.type === "playlists") return { names: message.names };
+  if (message?.type === "loaded")
+    return { loaded: message.name, error: message.error };
   if (message?.type !== "state") return;
   const { state, title, artist, album, folder, elapsed, duration, volume } =
     message;

@@ -108,10 +108,220 @@ body {
   transition: opacity var(--switch-ms) var(--switch-ease);
 }
 
-/* Height reserved while empty, so the list never moves when buttons arrive. */
+/* Fixed height, so the list never moves when buttons come or go. Positioned:
+   holds the toast. The first icon lines up with the rows' track column. */
 .toolbar {
+  position: relative;
   flex: none;
+  display: flex;
+  align-items: center;
   height: 44px;
+  padding: 0 10px;
+}
+
+.toolbar button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.toolbar button:active:not(:disabled) {
+  background: var(--track);
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+}
+
+.toolbar svg,
+.dialog svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+/* Over the list's top, below the toolbar. Kept in the DOM while empty: live
+   regions only announce changes. */
+.toast {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 1;
+  max-width: calc(100% - 40px);
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 20px;
+  background: var(--track);
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+}
+
+.toast:empty {
+  visibility: hidden;
+}
+
+/* No padding: the content fills the box, so a click on the dialog itself is
+   one on the backdrop. Clear of the notch and home indicator. No outline:
+   `showModal` focuses the box itself when it has nothing focusable. */
+.dialog {
+  width: min(100% - 40px, 400px);
+  max-height: min(600px, 100dvh - 160px);
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  outline: none;
+  background: var(--bg-soft);
+  color: var(--fg);
+}
+
+.dialog[open] {
+  display: flex;
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 60%);
+}
+
+.dialog-box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 0 20px;
+}
+
+.dialog h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.dialog button {
+  border: 0;
+  color: inherit;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.dialog .close {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+}
+
+.dialog .close:active {
+  background: var(--track);
+}
+
+.names {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 12px;
+}
+
+.names button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 44px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+}
+
+.names .marquee {
+  min-width: 0;
+}
+
+.names button[aria-selected="true"] {
+  background: var(--track);
+  color: var(--yellow);
+}
+
+.dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px 12px;
+}
+
+.dialog .primary {
+  min-width: 88px;
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 22px;
+  background: var(--orange);
+  font-weight: 600;
+}
+
+.dialog .primary:active:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.dialog .primary:disabled {
+  background: var(--track);
+  color: var(--muted);
+}
+
+.dialog.small {
+  width: min(100% - 40px, 320px);
+}
+
+.dialog.small h2,
+.dialog.small p {
+  margin: 0;
+  padding: 20px 20px 0;
+}
+
+.dialog.small p {
+  color: var(--muted);
+}
+
+.dialog.loading {
+  width: fit-content;
+}
+
+.dialog.loading p {
+  padding: 20px 28px;
+  color: var(--fg);
+}
+
+/* Modal at once, seen only if the load takes a while: fast loads would
+   flash it. */
+.dialog.loading,
+.dialog.loading::backdrop {
+  animation: reveal 150ms ease 300ms both;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+  }
 }
 
 /* `contain`: the edge bounce stays in the list instead of reaching the page.

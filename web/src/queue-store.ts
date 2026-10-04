@@ -27,6 +27,8 @@ export type Listener = {
   current(): void;
   /** `show(true)`, before planning: the list places itself and reports its view. */
   opening(): void;
+  /** `top()`: the list jumps to its first row. */
+  top(): void;
 };
 
 /** Queue entries loaded on demand around the view (architecture.md → "Blocks"). */
@@ -41,6 +43,8 @@ export type QueueStore = {
   view(first: number, last: number): void;
   /** Whether the list is shown (mini mode). */
   show(shown: boolean): void;
+  /** After a stored playlist load: the list jumps to its first row. */
+  top(): void;
   /** The current song from the last `state`; both `null` offline or with none. */
   readonly current: { position: number | null; id: number | null };
   /** The last `show`. */
@@ -192,6 +196,9 @@ export function queueStore(
       shown = next;
       if (next) listener?.opening();
       plan();
+    },
+    top() {
+      listener?.top();
     },
     get current() {
       return current;

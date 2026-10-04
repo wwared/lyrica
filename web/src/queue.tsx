@@ -237,6 +237,13 @@ export function QueueList({
         render(0);
         probe();
       },
+      top() {
+        paused = false;
+        clearTimeout(resume);
+        place({ anchor: 0, scrollTop: 0 });
+        moves.length = 0;
+        render(0);
+      },
     });
     const resumed = () => {
       if (touches > 0) return;

@@ -8,14 +8,22 @@ import {
 } from "preact/hooks";
 import noCover from "./assets/no-cover.png";
 import { covers, findCover } from "./cover";
+import { Icon } from "./icon";
 import { Marquee } from "./marquee";
+import { Playlists } from "./playlists";
 import { formatTime, position } from "./progress";
 import { QueueList } from "./queue";
 import { queueStore } from "./queue-store";
 import { useStream } from "./stream";
 import { Volume } from "./volume";
 import { useWakeLock } from "./wake";
-import { connect, type Command, type Connection, type Snapshot } from "./ws";
+import {
+  connect,
+  NOT_CONNECTED,
+  type Command,
+  type Connection,
+  type Snapshot,
+} from "./ws";
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -34,9 +42,16 @@ export function App() {
   }, []);
   useWakeLock();
 
-  // Stable, so passing it never invalidates the list's memo.
+  // Stable, so passing them never invalidates the list's or toolbar's memo.
   const [send] = useState(
     () => (command: Command) => connection.current?.send(command),
+  );
+  const [list] = useState(
+    () => () => connection.current?.playlists() ?? Promise.resolve(null),
+  );
+  const [load] = useState(
+    () => (name: string) =>
+      connection.current?.load(name) ?? Promise.resolve(NOT_CONNECTED),
   );
   const offline = snapshot?.state === "offline";
   const disabled = snapshot === null || offline;
@@ -70,11 +85,22 @@ export function App() {
     () => <QueueList length={queueLength} store={store} send={send} />,
     [queueLength],
   );
+  const playlists = useMemo(
+    () => (
+      <Playlists
+        disabled={disabled}
+        list={list}
+        load={load}
+        onLoaded={() => store.top()}
+      />
+    ),
+    [disabled],
+  );
 
   return (
     <main class={mini ? "app mini" : "app"}>
       <section class="queue" aria-hidden={!mini}>
-        <div class="toolbar" />
+        <div class="toolbar">{playlists}</div>
         {queueList}
       </section>
       <section class="now-playing" ref={nowPlaying}>
@@ -480,11 +506,3 @@ const MODES = [
     path: "M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z",
   },
 ] as const;
-
-function Icon({ path }: { path: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d={path} />
-    </svg>
-  );
-}
