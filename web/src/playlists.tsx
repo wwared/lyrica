@@ -154,6 +154,7 @@ export function Playlists({
         onKeyDown={(e) => e.key === "Escape" && e.preventDefault()}
         onCancel={(e) => e.preventDefault()}
       >
+        <span class="spinner" aria-hidden="true" />
         <p>Loading…</p>
       </dialog>
       <dialog

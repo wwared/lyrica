@@ -304,11 +304,53 @@ body {
 
 .dialog.loading {
   width: fit-content;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 28px 20px 22px;
 }
 
 .dialog.loading p {
-  padding: 20px 28px;
+  padding: 0;
   color: var(--fg);
+}
+
+/* A ring with a fading tail; a transform animation, so it keeps turning while
+   the main thread is busy with the new queue. */
+.spinner {
+  position: relative;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: conic-gradient(transparent 10%, var(--orange) 60%, var(--yellow));
+  animation: spin 900ms linear infinite;
+}
+
+.spinner::before,
+.spinner::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+
+/* Rounds the head. */
+.spinner::before {
+  top: 0;
+  left: calc(50% - 1.5px);
+  width: 3px;
+  height: 3px;
+  background: var(--yellow);
+}
+
+.spinner::after {
+  inset: 3px;
+  background: var(--bg-soft);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 /* Modal at once, seen only if the load takes a while: fast loads would
