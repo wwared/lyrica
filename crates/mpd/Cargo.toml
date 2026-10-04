@@ -9,6 +9,9 @@ publish.workspace = true
 nom.workspace = true
 tokio = { workspace = true, features = ["net", "io-util"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+socket2.workspace = true
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 

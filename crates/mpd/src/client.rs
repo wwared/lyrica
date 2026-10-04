@@ -1,7 +1,13 @@
-use std::{fmt, io, time::Duration};
+use std::{
+    fmt, io,
+    ops::Range,
+    pin::Pin,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader, ReadBuf},
     net::{TcpStream, ToSocketAddrs},
 };
 
@@ -9,6 +15,9 @@ use crate::{
     Error, Result, Single, Song, Status, Subsystem,
     parse::{self, Line},
 };
+
+/// Capacity reserved for a queue range's songs, whatever its length.
+const MAX_RESERVED_SONGS: usize = 1000;
 
 /// Protocol version from MPD's greeting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -29,10 +38,13 @@ impl fmt::Display for Version {
 /// Cancelling a command (dropping its future) leaves the connection out of
 /// sync; later commands then fail with [`Error::Broken`].
 pub struct Client {
-    stream: BufReader<TcpStream>,
+    stream: BufReader<QuickAck>,
     version: Version,
     request: String,
     response: String,
+    /// Separate from `response`: tokio's `read_line` re-validates the UTF-8
+    /// of the whole buffer on every call, quadratic over a long response.
+    line: String,
     broken: bool,
 }
 
@@ -40,7 +52,7 @@ impl Client {
     pub async fn connect(addr: impl ToSocketAddrs) -> Result<Self> {
         let stream = TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
-        let mut stream = BufReader::new(stream);
+        let mut stream = BufReader::new(QuickAck(stream));
         let mut greeting = String::new();
         read_line(&mut stream, &mut greeting).await?;
         let version = parse::greeting(&greeting)
@@ -50,6 +62,7 @@ impl Client {
             version,
             request: String::new(),
             response: String::new(),
+            line: String::new(),
             broken: false,
         })
     }
@@ -74,9 +87,22 @@ impl Client {
         Song::from_pairs(self.run("currentsong", &[]).await?)
     }
 
+    /// Queue entries at positions `range`. MPD clamps `range.end` to the
+    /// queue length; a start past the end is an `ACK`.
+    pub async fn queue_range(&mut self, range: Range<u32>) -> Result<Vec<Song>> {
+        let capacity = range.len().min(MAX_RESERVED_SONGS);
+        let arg = format!("{}:{}", range.start, range.end);
+        Song::list_from_pairs(self.run("playlistinfo", &[&arg]).await?, capacity)
+    }
+
     /// Starts playback, resuming if paused.
     pub async fn play(&mut self) -> Result<()> {
         self.run("play", &[]).await.map(drop)
+    }
+
+    /// Plays the queue entry with id `id`.
+    pub async fn play_id(&mut self, id: u32) -> Result<()> {
+        self.run("playid", &[&id.to_string()]).await.map(drop)
     }
 
     pub async fn pause(&mut self, pause: bool) -> Result<()> {
@@ -147,26 +173,24 @@ impl Client {
         self.broken = true;
         self.stream
             .get_mut()
+            .0
             .write_all(self.request.as_bytes())
             .await?;
         loop {
-            let start = self.response.len();
-            read_line(&mut self.stream, &mut self.response).await?;
-            match parse::line(&self.response[start..]) {
-                Some(Line::Pair(..)) => self.response.push('\n'),
-                Some(Line::Ok) => {
-                    self.response.truncate(start);
-                    break;
+            self.line.clear();
+            read_line(&mut self.stream, &mut self.line).await?;
+            match parse::line(&self.line) {
+                Some(Line::Pair(..)) => {
+                    self.response.push_str(&self.line);
+                    self.response.push('\n');
                 }
+                Some(Line::Ok) => break,
                 Some(Line::Ack(ack)) => {
                     self.broken = false;
                     return Err(Error::Ack(ack));
                 }
                 None => {
-                    return Err(Error::Protocol(format!(
-                        "unexpected line: {:?}",
-                        &self.response[start..]
-                    )));
+                    return Err(Error::Protocol(format!("unexpected line: {:?}", self.line)));
                 }
             }
         }
@@ -175,8 +199,27 @@ impl Client {
     }
 }
 
+/// The connection's socket, re-arming `TCP_QUICKACK` before every read:
+/// MPD's Nagle holds the last segment of a multi-segment response until the
+/// previous one is ACKed, which Linux otherwise delays by 40 ms. Linux drops
+/// the flag again on its own, hence every read.
+struct QuickAck(TcpStream);
+
+impl AsyncRead for QuickAck {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let stream = &mut self.get_mut().0;
+        #[cfg(target_os = "linux")]
+        socket2::SockRef::from(&*stream).set_tcp_quickack(true)?;
+        Pin::new(stream).poll_read(cx, buf)
+    }
+}
+
 /// Appends one line to `buf`, without its newline.
-async fn read_line(stream: &mut BufReader<TcpStream>, buf: &mut String) -> Result<()> {
+async fn read_line(stream: &mut BufReader<QuickAck>, buf: &mut String) -> Result<()> {
     stream.read_line(buf).await?;
     if buf.pop() != Some('\n') {
         return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
@@ -270,6 +313,45 @@ mod tests {
             .seek_current(Duration::from_millis(83_250))
             .await
             .unwrap();
+        drop(client);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn queue_range_and_play_id() {
+        // Larger than the read buffer, so it takes several reads.
+        let window: String = (100..400)
+            .map(|pos| {
+                format!(
+                    "file: dir/{pos}.flac\nTitle: {}\nPos: {pos}\nId: {}\n",
+                    "x".repeat(100),
+                    pos + 1
+                )
+            })
+            .chain(["OK\n".into()])
+            .collect();
+        let script = vec![
+            ("playlistinfo \"100:400\"\n", &*window.leak()),
+            ("playlistinfo \"5:5\"\n", "OK\n"),
+            (
+                "playlistinfo \"9:10\"\n",
+                "ACK [2@0] {playlistinfo} Bad song index\n",
+            ),
+            ("playid \"7\"\n", "OK\n"),
+        ];
+        let (addr, server) = fake(script.leak()).await;
+        let mut client = Client::connect(addr).await.unwrap();
+        let songs = client.queue_range(100..400).await.unwrap();
+        assert_eq!(songs.len(), 300);
+        assert_eq!(songs[0].file, "dir/100.flac");
+        assert_eq!(songs[299].position, Some(399));
+        assert_eq!(songs[299].id, Some(400));
+        assert!(client.queue_range(5..5).await.unwrap().is_empty());
+        assert!(matches!(
+            client.queue_range(9..10).await,
+            Err(Error::Ack(_))
+        ));
+        client.play_id(7).await.unwrap();
         drop(client);
         server.await.unwrap();
     }

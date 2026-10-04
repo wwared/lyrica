@@ -531,6 +531,7 @@ name = "lyrica-mpd"
 version = "0.1.0"
 dependencies = [
  "nom",
+ "socket2",
  "tokio",
 ]
 

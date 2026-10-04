@@ -454,6 +454,7 @@ mod tests {
             artist: None,
             album_artist: None,
             album: None,
+            track: None,
             duration: None,
             position: None,
             id: None,
