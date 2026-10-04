@@ -86,12 +86,13 @@ body {
 }
 
 /* Above the now-playing section in both modes, so its geometry never changes
-   on a switch; only shown in mini mode. */
+   on a switch; only shown in mini mode. `visibility`, not `display`, so the
+   list keeps its size and scroll position while hidden. */
 .queue {
   flex: 1;
   min-height: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
   opacity: 0;
   visibility: hidden;
   transition:
@@ -103,6 +104,21 @@ body {
   opacity: 1;
   visibility: visible;
   transition: opacity var(--switch-ms) var(--switch-ease);
+}
+
+/* Height reserved while empty, so the list never moves when buttons arrive. */
+.toolbar {
+  flex: none;
+  height: 44px;
+}
+
+/* `contain`: the edge bounce stays in the list instead of reaching the page.
+   No `touch-action` here; the root's `pan-x pan-y` already allows panning. */
+.queue-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Pinned to the bottom, with fixed-height children, so nothing moves when the
@@ -216,10 +232,6 @@ body {
 
 .placeholder {
   color: var(--muted);
-}
-
-.queue p {
-  margin: 0;
 }
 
 /* The time sits beside the bar, in a box of fixed width (see `timeSizer`),

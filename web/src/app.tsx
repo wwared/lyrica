@@ -48,7 +48,8 @@ export function App() {
   return (
     <main class={mini ? "app mini" : "app"}>
       <section class="queue" aria-hidden={!mini}>
-        <p class="placeholder">Queue</p>
+        <div class="toolbar" />
+        <div class="queue-list" />
       </section>
       <section class="now-playing" ref={nowPlaying}>
         <Art cover={cover} />
