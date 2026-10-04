@@ -135,8 +135,8 @@ body {
   position: relative;
 }
 
-/* Height: ROW_PX in virtual.ts. Every row always holds the same five
-   elements, so filling one only changes text and `src`. */
+/* Height: ROW_PX in virtual.ts. Every row always holds the same four
+   elements, so filling one only changes text. */
 .queue-row {
   position: absolute;
   top: 0;
@@ -178,23 +178,26 @@ body {
   white-space: nowrap;
 }
 
-/* Overlaps the track number, so showing it moves nothing; overflows the
-   38 px of the two lines by 1 px each way, centred in the 56 px row. */
+/* Spans the album's rendered rows over their track column, drawn above
+   them. Padding: the cover's 8 px inset in a 56 px row; a sticky element
+   stays within its parent's content box, so the cover stops on the first
+   and last rows' places. */
+.queue-album {
+  position: absolute;
+  left: 20px;
+  width: 40px;
+  padding: 8px 0;
+  pointer-events: none;
+}
+
+/* Pinned to the list's top while its album is in view. */
 .queue-cover {
-  grid-area: track;
-  align-self: center;
+  position: sticky;
+  top: 8px;
+  display: block;
   width: 40px;
   height: 40px;
   object-fit: contain;
-  visibility: hidden;
-}
-
-.queue-row.cover > .queue-cover {
-  visibility: visible;
-}
-
-.queue-row.cover > .queue-track {
-  visibility: hidden;
 }
 
 .queue-title,

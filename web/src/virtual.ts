@@ -39,6 +39,35 @@ export const firstRow = (scrollTop: number, pool: number, length: number) =>
 export const slotPosition = (slot: number, first: number, pool: number) =>
   first + ((((slot - first) % pool) + pool) % pool);
 
+/** Rows `start` to `end - 1` of one album group. */
+export interface Span {
+  start: number;
+  end: number;
+}
+
+/**
+ * The album groups among queue positions `first` to `end - 1`, from
+ * `QueueStore.starts`. A span begins at a group start, at `first` or after
+ * rows not served (a group started above), and ends before the next group
+ * start or row not served.
+ */
+export function albumSpans(
+  first: number,
+  end: number,
+  starts: (position: number) => boolean | undefined,
+): Span[] {
+  const spans: Span[] = [];
+  let open = -1;
+  for (let p = first; p < end; p++) {
+    const s = starts(p);
+    if (s === false && open >= 0) continue;
+    if (open >= 0) spans.push({ start: open, end: p });
+    open = s === undefined ? -1 : p;
+  }
+  if (open >= 0) spans.push({ start: open, end });
+  return spans;
+}
+
 export interface Placement {
   anchor: number;
   scrollTop: number;

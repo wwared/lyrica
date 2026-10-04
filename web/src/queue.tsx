@@ -3,6 +3,7 @@ import { covers, findCover } from "./cover";
 import { formatTime } from "./progress";
 import { AHEAD_VIEWPORTS, type QueueStore } from "./queue-store";
 import {
+  albumSpans,
   centre,
   firstRow,
   type Placement,
@@ -163,8 +164,9 @@ export function QueueList({
       const pxPerMs = Math.abs(offset - from) / Math.max(now - since, 16);
       return pxPerMs > (AHEAD_ROWS_PER_S * ROW_PX) / 1000;
     };
-    // The visible group starts, then those within AHEAD_VIEWPORTS on the
-    // scroll's side, then the other side, nearest first.
+    // The folders of the visible rows, then those within AHEAD_VIEWPORTS on
+    // the scroll's side, then the other side, nearest first. Rows of a group
+    // share its folder, so this covers groups started outside the range too.
     const probe = () => {
       if (!store.shown || disposed) return;
       const offset = v.anchor * ROW_PX + v.scrollTop;
@@ -182,7 +184,6 @@ export function QueueList({
       const start = (p: number) => {
         const folder = store.entry(p)?.folder;
         if (!folder || covers.has(folder) || probing.has(folder)) return;
-        if (!store.starts(p)) return;
         probing.add(folder);
         findCover(folder).then((cover) => probed(folder, cover));
       };
@@ -338,14 +339,10 @@ export function QueueList({
     const artist = entry?.artist;
     const album = entry?.album;
     const duration = entry?.duration;
-    const starts = store.starts(position);
-    const cover =
-      starts && entry!.folder ? covers.get(entry!.folder) : undefined;
     // By position, not slot: a song keeps its shade across re-anchors.
     let className = position % 2 ? "queue-row odd" : "queue-row";
     if (currentId !== null && entry?.id === currentId) className += " current";
-    if (position > 0 && starts) className += " group";
-    if (cover) className += " cover";
+    if (position > 0 && store.starts(position)) className += " group";
     rows.push(
       <div
         key={slot}
@@ -356,12 +353,6 @@ export function QueueList({
         style={{ transform: `translateY(${(position - v.anchor) * ROW_PX}px)` }}
       >
         <span class="queue-track">{entry?.track ?? ""}</span>
-        <img
-          class="queue-cover"
-          alt=""
-          decoding="async"
-          src={cover ?? undefined}
-        />
         <span class="queue-title">{entry?.title ?? ""}</span>
         <span class="queue-info">
           {artist && album ? `${artist} · ${album}` : (artist ?? album ?? "")}
@@ -369,6 +360,30 @@ export function QueueList({
         <span class="queue-time">
           {duration == null ? "" : formatTime(duration)}
         </span>
+      </div>,
+    );
+  }
+  // Keyed by album, so a cover keeps its element while its span changes; the
+  // count tells apart an album found twice in the pool.
+  const albums = [];
+  const seen = new Map<string, number>();
+  for (const span of albumSpans(first, first + pool, (p) => store.starts(p))) {
+    const { folder, album } = store.entry(span.start)!;
+    const cover = folder ? covers.get(folder) : undefined;
+    if (!cover) continue;
+    const id = `${folder}\n${album}`;
+    const n = seen.get(id) ?? 0;
+    seen.set(id, n + 1);
+    albums.push(
+      <div
+        key={`${id}\n${n}`}
+        class="queue-album"
+        style={{
+          top: `${(span.start - v.anchor) * ROW_PX}px`,
+          height: `${(span.end - span.start) * ROW_PX}px`,
+        }}
+      >
+        <img class="queue-cover" alt="" decoding="async" src={cover} />
       </div>,
     );
   }
@@ -380,6 +395,7 @@ export function QueueList({
         style={{ height: `${spaceRows(length) * ROW_PX}px` }}
       >
         {rows}
+        <div aria-hidden="true">{albums}</div>
       </div>
     </div>
   );

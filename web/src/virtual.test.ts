@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  albumSpans,
   centre,
   clampAnchor,
   firstRow,
@@ -57,6 +58,41 @@ describe("rendered rows", () => {
     );
     const shifted = at(1001);
     expect(shifted.filter((p, slot) => p !== range[slot])).toEqual([1042]);
+  });
+});
+
+describe("album spans", () => {
+  // One character per position from `first`: S starts a group, - continues
+  // one, ? is not served.
+  const spans = (first: number, rows: string) =>
+    albumSpans(first, first + rows.length, (p) =>
+      rows[p - first] === "?" ? undefined : rows[p - first] === "S",
+    ).map(({ start, end }) => [start, end]);
+
+  test("run from each group start to the next, the last to the range's end", () => {
+    expect(spans(100, "S--S-SS--")).toEqual([
+      [100, 103],
+      [103, 105],
+      [105, 106],
+      [106, 109],
+    ]);
+  });
+
+  test("a group started above the range spans from its first row", () => {
+    expect(spans(100, "---S-")).toEqual([
+      [100, 103],
+      [103, 105],
+    ]);
+  });
+
+  test("rows not served end a span and belong to none", () => {
+    expect(spans(100, "S-??--S??")).toEqual([
+      [100, 102],
+      [104, 106],
+      [106, 107],
+    ]);
+    expect(spans(100, "???")).toEqual([]);
+    expect(spans(100, "")).toEqual([]);
   });
 });
 
