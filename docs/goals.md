@@ -5,8 +5,8 @@ lyrica is a mobile-first PWA client for [MPD](https://www.musicpd.org/), primari
 ## Goals
 
 - **Fast on a huge library.** Must stay responsive with queues/playlists of ~200k songs and ~10k albums.
-- **Immediately responsive UI.** Now-playing info and controls work instantly; the queue, cover art and other slow data load lazily and asynchronously without blocking anything.
-- **Simple player UI.** Now playing (art, song info, live progress) and controls at the bottom; an auto-scrolling live queue above, centred on the current song. Light/dark mode, clean controls. Stored playlists behind a dedicated button; no settings menu.
+- **Immediately responsive UI.** Now-playing info and controls work instantly; the queue, cover art and other slow data load lazily and asynchronously, on demand and in the background, without blocking anything. Adding the queue must not make anything slower: interactivity, loading and state updates stay as fast as they are without it.
+- **Simple player UI.** Now playing (art, song info, live progress) and controls at the bottom; an auto-scrolling live queue above, centred on the current song, under a toolbar holding the stored playlists button and queue actions. Dark gruvbox colours, clean controls. No settings menu.
 - **Read-only queue.** The queue is viewed and played from, never edited: no reordering, adding, removing or consume mode. The only change lyrica makes to it is replacing it with a stored playlist.
 - **Single self-contained binary.** One Rust binary serves the embedded frontend and talks to MPD.
 

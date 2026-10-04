@@ -17,35 +17,34 @@ Now playing is done, including seeking on the bar in full mode. The queue area a
 
 Each item is one self-contained step. Order within a phase is the intended build order.
 
-### Seek buttons (maybe)
-
-Backward / forward by 5 s (relative `seekcur`). Revisit once bar seeking has been in use; they may be unnecessary. Placement open: the control strip has no free room at 375 px; one option is long-pressing previous / next to seek (or the reverse).
-
 ### Live queue
 
-Read-only: no reordering, adding, removing or consume mode. The only way the queue changes from lyrica is loading a stored playlist (next phase).
+Read-only: no reordering, adding, removing or consume mode. The only way the queue changes from lyrica is loading a stored playlist (next phase). Design: `architecture.md` → "Queue" (server) and "Live queue" (frontend).
 
-1. **Queue protocol in `lyrica-mpd`:** `playlistinfo` for a position range, with the per-track fields the list shows (title, artist, album artist, album, track number, duration, id).
-2. **Queue position in the state message:** current song position and id, queue length and queue version.
-3. **Queue windows over the WS:** the client requests a position range; the server answers with those entries. Fetched off the idle connection so now playing never waits on it.
-4. **Virtual list:** the queue area becomes its own scroll container sized to the whole queue, rendering only the rows near the viewport, fixed row height.
-5. **Lazy loading while scrolling:** windows load ahead in both directions with enough margin that scrolling never shows missing rows; far-away windows are dropped.
-6. **Auto-centre:** opens centred on the current song, highlighted with an accent colour, and re-centres when it changes. Scrolling by the user pauses it; 15 s after scrolling stops it resumes and re-centres on the current song.
-7. **Auto-update:** idle on `playlist`; a new queue version invalidates loaded windows and reloads the visible ones.
-8. **Album grouping:** adjacent tracks from the same album form a group with a small separator.
-9. **Lazy cover art per group:** one cover per album group from the HTTP mirror, loaded only when visible, sharing the now-playing cover cache.
-10. **Tap to play:** tapping a track plays it (`playid`).
+**Hard requirement:** the queue must not make anything slower. Now-playing updates, controls, the mode switch and scrolling stay as fast as they are now. Every queue operation, server and client, runs in the background, on demand and in small pieces; every step checks this in headless Chromium against the real queue (`mpc` play/pause/next to DOM within today's 2–4 ms while the list loads and scrolls, no long tasks during a fling, no dropped frames in the mode switch).
+
+1. **Queue reads in `lyrica-mpd`:** `Status` gains `playlist` (version), `playlistlength`, `song` and `songid`; `playlistinfo START:END` returns entries with position, id and the tags the list shows; `playid`. Measure window latency with the Rust client against the real queue; if the ~40 ms stalls seen with a raw client show up, fix them here.
+2. **Queue fields in the state message:** version, length, current position and id; the idle loop also waits on `playlist`.
+3. **Queue windows over the WS:** a third MPD connection serving window requests from all clients; the request / reply messages with a per-request size cap; the WS loop hands requests off without awaiting and prefers state pushes over window replies. Tested with the fake MPD: a slow window never delays a state push or a command.
+4. **Mini layout:** the playlist area becomes the toolbar (empty, fixed height) above the queue's scroll container; the mini player stays at the bottom.
+5. **Virtual list:** sized to the queue length, rendering only rows near the viewport, empty rows where nothing is loaded; queue data in its own store, not in `App`'s snapshot state, so state pushes don't re-render the list.
+6. **On-demand loading:** blocks requested only while the queue is shown, nearest the viewport first, at most two in flight; far blocks dropped; replies for an older version dropped.
+7. **Auto-centre and highlight:** opens centred on the current song, its row in an accent colour, and re-centres when it changes. Scrolling by the user pauses it; 15 s after scrolling stops it resumes and re-centres.
+8. **Auto-update:** a new queue version refetches the visible blocks, keeping old rows shown until replaced, and drops the rest.
+9. **Album grouping:** adjacent entries from the same folder and album form a group with a small separator, row heights unchanged.
+10. **Lazy cover art per group:** one cover per group from the HTTP mirror, probed only for groups visible once scrolling settles, sharing the now-playing cover cache.
+11. **Tap to play:** tapping a row plays it (`playid`).
 
 ### Stored playlists
 
-A dedicated button opens the list; there is no general settings menu.
+A button in the mini-mode toolbar opens the list; there is no general settings menu. Listings go over the queue connection.
 
 1. **Playlist protocol in `lyrica-mpd`:** `listplaylists`, `clear`, `load`.
 2. **Playlists over the WS:** list request and reply; a load command that clears the queue and loads the playlist.
-3. **Playlists button and list:** opens a list of stored playlists; tapping one replaces the queue.
+3. **Playlists button and list:** a toolbar button opens a list of stored playlists; tapping one replaces the queue.
 
 ## Later (to design)
 
 Ideas to revisit once the phases above are done; how they look and work is open.
 
-- **Queue actions:** convenience actions on the queue, possibly in a queue-specific toolbar. Example: play the current album from the start — jump to the first track of the current song's album in the queue, play it, and turn random off (done by hand today). Placement, the set of actions and how to find album boundaries without fetching the whole queue are open.
+- **Queue actions:** convenience buttons in the mini-mode toolbar. Example: play the current album from the start — jump to the first track of the current song's album in the queue, play it, and turn random off (done by hand today). The set of actions and how to find album boundaries without fetching the whole queue are open.
