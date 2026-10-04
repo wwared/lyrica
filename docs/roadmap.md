@@ -4,7 +4,7 @@ Work proceeds bottom-up in small steps, each usable on its own. Design details l
 
 ## Current state
 
-Now playing and the live queue are done; the live queue's phone checks and design refinements are open (see "Open work"). There are no stored playlists yet.
+Now playing and the live queue are done and checked on an iPhone; one bounce fix awaits its phone check, and the design is open to refinement (see "Open work"). There are no stored playlists yet.
 
 - **Foundation:** Nix flake (dev shell, build, fmt, check, NixOS module); `lyrica-mpd` with the commands lyrica needs; server bridging WebSocket clients to MPD (idle, command and queue connections, reconnect with backoff, offline state); frontend embedded in the binary.
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
@@ -16,14 +16,9 @@ Now playing and the live queue are done; the live queue's phone checks and desig
 
 ## Open work
 
-### Live queue phone checks
+### Live queue phone check
 
-What headless Chromium can't check, to do on an iPhone (home-screen app):
-
-- **Taps:** a tap plays the row; a tap that stops a fling doesn't; no grey tap flash.
-- **Look:** the scroll indicator stays hidden; the album separator is visible but subtle; the song-change jump and the fade-in's first frame look right.
-- **Covers while scrolling:** covers are already showing as rows scroll into view during ordinary drags and flings, during a hard fling's tail and after it stops; no stutter while they load, also flinging past the biggest covers (13–14 MB, near queue positions 137,507 and 137,526). If they pop in after hard flings, raise `AHEAD_ROWS_PER_S` (100 rows/s; headless touch flings peak at 67–105 rows/s, so iOS speeds are unmeasured). If big covers stutter, consider server-side thumbnails (`architecture.md` → "Image sizes").
-- **Re-anchoring:** one hard fling never reaches the scroll space's edge before scrolling stops (re-anchoring waits for the stop; `architecture.md` → "Re-anchoring").
+- **Top bounce:** with the list near the queue's start, a fling into the top's rubber band leaves the rows filled, also after a song change and full → mini (`architecture.md` → "Virtual list"; headless Chromium has no rubber band, so the fix was checked by simulating WebKit's negative `scrollTop`).
 
 ### Live queue design refinements
 

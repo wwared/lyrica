@@ -61,6 +61,13 @@ export function QueueList({
     // Written in the layout effect, together with the anchor it belongs to.
     pendingScrollTop: null as number | null,
   }).current;
+  // iOS's rubber band reports positions beyond the space's ends; there are no
+  // rows there.
+  const scrolled = (el: HTMLElement) =>
+    Math.max(
+      0,
+      Math.min(el.scrollTop, spaceRows(v.length) * ROW_PX - v.viewportPx),
+    );
 
   const report = () => {
     const offset = v.anchor * ROW_PX + v.scrollTop;
@@ -71,7 +78,7 @@ export function QueueList({
   };
 
   if (length !== v.length) {
-    const scrollTop = list.current?.scrollTop ?? 0;
+    const scrollTop = list.current ? scrolled(list.current) : 0;
     const next = resize(v.anchor, scrollTop, v.viewportPx, length);
     v.length = length;
     v.anchor = next.anchor;
@@ -117,7 +124,7 @@ export function QueueList({
     };
     const pass = () => {
       frame = 0;
-      v.scrollTop = el.scrollTop;
+      v.scrollTop = scrolled(el);
       if (v.moved) {
         v.moved = false;
         v.stale = true;
@@ -247,7 +254,7 @@ export function QueueList({
     };
     const settled = () => {
       if (touches > 0) return;
-      const next = reanchor(v.anchor, el.scrollTop, v.length);
+      const next = reanchor(v.anchor, scrolled(el), v.length);
       if (next !== null) {
         place(next);
         render(0);
