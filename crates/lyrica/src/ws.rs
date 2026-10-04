@@ -1,5 +1,6 @@
-//! Frontend WebSocket endpoint: pushes the player state, accepts commands and
-//! queue window requests. Protocol: `docs/architecture.md` → "MPD bridge".
+//! Frontend WebSocket endpoint: pushes the player state, accepts commands,
+//! queue window requests and stored playlist listings and loads. Protocol:
+//! `docs/architecture.md` → "MPD bridge".
 
 use std::{sync::Arc, time::Instant};
 
@@ -16,13 +17,13 @@ use tokio::sync::{
     watch,
 };
 
-use crate::bridge::{Command, Snapshot, Window, WindowRequest};
+use crate::bridge::{self, Command, Job, Read, ReadRequest, Snapshot, Window};
 
 #[derive(Clone)]
 pub struct Bridge {
     pub snapshots: watch::Receiver<Snapshot>,
-    pub commands: mpsc::Sender<Command>,
-    pub windows: mpsc::Sender<WindowRequest>,
+    pub jobs: mpsc::Sender<Job>,
+    pub reads: mpsc::Sender<ReadRequest>,
     /// `config` message, sent first on every connection.
     pub config: Arc<str>,
 }
@@ -31,6 +32,10 @@ pub struct Bridge {
 #[serde(tag = "type", rename_all = "lowercase")]
 enum ClientMessage {
     Queue(Window),
+    Playlists,
+    Load {
+        name: String,
+    },
     #[serde(untagged)]
     Command(Command),
 }
@@ -54,8 +59,8 @@ async fn handle(mut socket: WebSocket, mut bridge: Bridge) {
         return;
     }
     bridge.snapshots.mark_changed();
-    // Unbounded so the queue task never waits on this socket; the request
-    // channel's capacity bounds it.
+    // Unbounded so the MPD tasks never wait on this socket; the request
+    // channels' capacities bound it.
     let (reply_tx, mut replies) = mpsc::unbounded_channel();
     loop {
         tokio::select! {
@@ -77,18 +82,25 @@ async fn handle(mut socket: WebSocket, mut bridge: Bridge) {
             message = socket.recv() => match message {
                 Some(Ok(Message::Text(text))) => match serde_json::from_str(&text) {
                     Ok(ClientMessage::Command(command)) => {
-                        if bridge.commands.send(command).await.is_err() {
+                        if bridge.jobs.send(Job::Command(command)).await.is_err() {
                             return;
                         }
                     }
+                    Ok(ClientMessage::Load { name }) => match bridge.jobs.try_reserve() {
+                        Ok(permit) => permit.send(Job::Load { name, reply: reply_tx.clone() }),
+                        Err(TrySendError::Full(())) => {
+                            let _ = reply_tx.send(bridge::loaded(&name, Some("Busy")));
+                        }
+                        Err(TrySendError::Closed(())) => return,
+                    },
                     Ok(ClientMessage::Queue(window)) => {
-                        let request = WindowRequest { window, reply: reply_tx.clone() };
-                        match bridge.windows.try_send(request) {
-                            Ok(()) => {}
-                            Err(TrySendError::Full(_)) => {
-                                let _ = reply_tx.send(window.unserved());
-                            }
-                            Err(TrySendError::Closed(_)) => return,
+                        if !read(&bridge, &reply_tx, Read::Window(window)) {
+                            return;
+                        }
+                    }
+                    Ok(ClientMessage::Playlists) => {
+                        if !read(&bridge, &reply_tx, Read::Playlists) {
+                            return;
                         }
                     }
                     Err(error) => tracing::warn!("ignoring message {:?}: {error}", text.as_str()),
@@ -98,6 +110,23 @@ async fn handle(mut socket: WebSocket, mut bridge: Bridge) {
                 Some(Err(_)) | None => return,
             },
         }
+    }
+}
+
+/// Queues `read` without waiting, replying "unserved" at once when the queue
+/// task is busy; false once the task is gone.
+fn read(bridge: &Bridge, reply: &mpsc::UnboundedSender<String>, read: Read) -> bool {
+    let request = ReadRequest {
+        read,
+        reply: reply.clone(),
+    };
+    match bridge.reads.try_send(request) {
+        Ok(()) => true,
+        Err(TrySendError::Full(_)) => {
+            let _ = reply.send(read.unserved());
+            true
+        }
+        Err(TrySendError::Closed(_)) => false,
     }
 }
 
@@ -145,6 +174,12 @@ mod tests {
         );
         assert!(parse(r#"{"type":"queue","version":3,"start":10,"end":9}"#).is_err());
         assert_eq!(parse(r#"{"type":"next"}"#).unwrap(), "Command(Next)");
+        assert_eq!(parse(r#"{"type":"playlists"}"#).unwrap(), "Playlists");
+        assert_eq!(
+            parse(r#"{"type":"load","name":"a \"b\""}"#).unwrap(),
+            r#"Load { name: "a \"b\"" }"#
+        );
+        assert!(parse(r#"{"type":"load"}"#).is_err());
         assert!(parse(r#"{"type":"seek","position":-1}"#).is_err());
         assert!(parse(r#"{"type":"nope"}"#).is_err());
     }
@@ -171,18 +206,14 @@ mod tests {
             ..Snapshot::offline()
         };
         let (snapshot_tx, snapshots) = watch::channel(playing.clone());
-        let (commands, mut command_rx) = mpsc::channel(16);
-        let (windows, window_rx) = mpsc::channel(2);
-        tokio::spawn(bridge::serve_windows(
-            mpd,
-            None,
-            window_rx,
-            snapshots.clone(),
-        ));
+        // One slot, so a queued command leaves no room for a load.
+        let (jobs, mut job_rx) = mpsc::channel(1);
+        let (reads, read_rx) = mpsc::channel(2);
+        tokio::spawn(bridge::serve_reads(mpd, None, read_rx, snapshots.clone()));
         let app = Router::new().route("/ws", get(upgrade)).with_state(Bridge {
             snapshots,
-            commands,
-            windows,
+            jobs,
+            reads,
             config: config_message(None).into(),
         });
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -205,6 +236,11 @@ mod tests {
             recv(&mut ws).await,
             serde_json::json!({"type": "queue", "version": 1, "start": 300, "songs": null})
         );
+        send(&mut ws, serde_json::json!({"type": "playlists"})).await;
+        assert_eq!(
+            recv(&mut ws).await,
+            serde_json::json!({"type": "playlists", "names": null})
+        );
 
         snapshot_tx.send_replace(Snapshot {
             title: Some("x".into()),
@@ -212,10 +248,15 @@ mod tests {
         });
         assert_eq!(recv(&mut ws).await["title"], "x");
         send(&mut ws, serde_json::json!({"type": "next"})).await;
-        let command = tokio::time::timeout(Duration::from_secs(5), command_rx.recv())
+        send(&mut ws, serde_json::json!({"type": "load", "name": "p"})).await;
+        assert_eq!(
+            recv(&mut ws).await,
+            serde_json::json!({"type": "loaded", "name": "p", "error": "Busy"})
+        );
+        let job = tokio::time::timeout(Duration::from_secs(5), job_rx.recv())
             .await
             .expect("command in time");
-        assert_eq!(format!("{command:?}"), "Some(Next)");
+        assert_eq!(format!("{job:?}"), "Some(Command(Next))");
     }
 
     #[test]

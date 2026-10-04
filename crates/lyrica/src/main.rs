@@ -60,8 +60,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         password: args.mpd_password,
     });
     let (snapshot_tx, snapshots) = watch::channel(Snapshot::offline());
-    let (commands, command_rx) = mpsc::channel(16);
-    let (windows, window_rx) = mpsc::channel(64);
+    let (jobs, job_rx) = mpsc::channel(16);
+    let (reads, read_rx) = mpsc::channel(64);
     let music_url = args.music_url.map(|mut url| {
         if !url.ends_with('/') {
             url.push('/');
@@ -71,13 +71,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::spawn(bridge::follow(mpd.clone(), music_url.clone(), snapshot_tx));
     tokio::spawn(bridge::execute_commands(
         mpd.clone(),
-        command_rx,
+        job_rx,
         snapshots.clone(),
     ));
-    tokio::spawn(bridge::serve_windows(
+    tokio::spawn(bridge::serve_reads(
         mpd,
         music_url,
-        window_rx,
+        read_rx,
         snapshots.clone(),
     ));
 
@@ -86,8 +86,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .fallback_service(get(assets::serve))
         .with_state(ws::Bridge {
             snapshots,
-            commands,
-            windows,
+            jobs,
+            reads,
             config: ws::config_message(args.stream_url.as_deref()).into(),
         });
 

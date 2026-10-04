@@ -115,6 +115,13 @@ enum ServerMessage<'a> {
         start: u32,
         songs: Option<Vec<Entry>>,
     },
+    Playlists {
+        names: Option<&'a [String]>,
+    },
+    Loaded {
+        name: &'a str,
+        error: Option<&'a str>,
+    },
 }
 
 /// Queue entry as shown in the list; its position is implied by the window.
@@ -255,11 +262,6 @@ impl Window {
         self.start..self.end
     }
 
-    /// JSON `queue` reply for a window that couldn't be served now.
-    pub fn unserved(self) -> String {
-        self.reply(None)
-    }
-
     fn reply(self, songs: Option<Vec<Entry>>) -> String {
         let message = ServerMessage::Queue {
             version: self.version,
@@ -270,10 +272,50 @@ impl Window {
     }
 }
 
-/// A window and where its reply goes.
-pub struct WindowRequest {
-    pub window: Window,
+/// Read served on the queue connection.
+#[derive(Debug, Clone, Copy)]
+pub enum Read {
+    Window(Window),
+    Playlists,
+}
+
+impl Read {
+    /// JSON reply for a read that couldn't be served now.
+    pub fn unserved(self) -> String {
+        match self {
+            Read::Window(window) => window.reply(None),
+            Read::Playlists => playlists(None),
+        }
+    }
+}
+
+/// A read and where its reply goes.
+pub struct ReadRequest {
+    pub read: Read,
     pub reply: mpsc::UnboundedSender<String>,
+}
+
+/// Work for the command connection.
+#[derive(Debug)]
+pub enum Job {
+    Command(Command),
+    /// Replaces the queue with stored playlist `name`; `reply` gets the
+    /// `loaded` message.
+    Load {
+        name: String,
+        reply: mpsc::UnboundedSender<String>,
+    },
+}
+
+fn playlists(names: Option<&[String]>) -> String {
+    serde_json::to_string(&ServerMessage::Playlists { names })
+        .expect("playlists message serializes")
+}
+
+/// JSON `loaded` reply: `error` is `None` once the queue holds `name`.
+pub fn loaded(name: &str, error: Option<&str>) -> String {
+    serde_json::to_string(&ServerMessage::Loaded { name, error })
+        .expect("loaded message serializes")
 }
 
 /// Keeps `snapshots` current, reconnecting with backoff while MPD is
@@ -393,70 +435,150 @@ fn folder(music_url: &str, file: &str) -> Option<String> {
     Some(url)
 }
 
-/// Runs commands from all WebSocket clients, one at a time, on a dedicated
-/// connection.
+/// Runs commands and loads from all WebSocket clients, one at a time, on a
+/// dedicated connection.
 pub async fn execute_commands(
     mpd: Arc<Mpd>,
-    mut commands: mpsc::Receiver<Command>,
+    mut jobs: mpsc::Receiver<Job>,
     snapshots: watch::Receiver<Snapshot>,
 ) {
     let mut client = None;
-    while let Some(command) = commands.recv().await {
-        let action = Action::new(command, &snapshots.borrow());
-        let Some(action) = action else {
-            tracing::info!("MPD offline; dropping {command:?}");
-            continue;
-        };
-        if let Err(error) = execute(&mpd, &mut client, async move |c| action.run(c).await).await {
-            tracing::warn!("{command:?}: {error}");
+    while let Some(job) = jobs.recv().await {
+        match job {
+            Job::Command(command) => {
+                let action = Action::new(command, &snapshots.borrow());
+                let Some(action) = action else {
+                    tracing::info!("MPD offline; dropping {command:?}");
+                    continue;
+                };
+                if let Err(error) =
+                    execute(&mpd, &mut client, async move |c| action.run(c).await).await
+                {
+                    tracing::warn!("{command:?}: {error}");
+                }
+            }
+            Job::Load { name, reply } => {
+                let error = load(&mpd, &mut client, &name, &snapshots).await;
+                if let Some(error) = &error {
+                    tracing::warn!("loading playlist {name:?}: {error}");
+                }
+                // The client may have disconnected meanwhile.
+                let _ = reply.send(loaded(&name, error.as_deref()));
+            }
         }
     }
 }
 
-/// Serves queue windows for all WebSocket clients, one at a time, on a
-/// dedicated connection, so state pushes and commands never wait on them.
-pub async fn serve_windows(
+/// Replaces the queue with playlist `name`; the error to show on failure.
+async fn load(
+    mpd: &Mpd,
+    client: &mut Option<Client>,
+    name: &str,
+    snapshots: &watch::Receiver<Snapshot>,
+) -> Option<String> {
+    if snapshots.borrow().state == PlayState::Offline {
+        return Some("MPD offline".into());
+    }
+    // Owned: a borrowed name fails rustc's higher-ranked `Send` check on the
+    // spawned task.
+    let name = name.to_owned();
+    let result = execute(mpd, client, async move |c| load_listed(c, &name).await).await;
+    match result {
+        Ok(true) => None,
+        Ok(false) => Some("No such playlist".into()),
+        Err(Error::Ack(ack)) => Some(ack.message),
+        Err(error) => Some(error.to_string()),
+    }
+}
+
+/// Replaces the queue with playlist `name` if MPD lists it; whether it did.
+async fn load_listed(client: &mut Client, name: &str) -> Result<bool> {
+    // `load` failing after `clear` leaves the queue empty, so a playlist
+    // removed since the listing must not get that far.
+    if !client.playlists().await?.iter().any(|n| n == name) {
+        return Ok(false);
+    }
+    client.replace_queue(name).await?;
+    Ok(true)
+}
+
+/// Serves queue windows and playlist listings for all WebSocket clients, one
+/// at a time, on a dedicated connection, so state pushes and commands never
+/// wait on them.
+pub async fn serve_reads(
     mpd: Arc<Mpd>,
     music_url: Option<String>,
-    mut requests: mpsc::Receiver<WindowRequest>,
+    mut requests: mpsc::Receiver<ReadRequest>,
     snapshots: watch::Receiver<Snapshot>,
 ) {
     let mut client = None;
-    while let Some(WindowRequest { window, reply }) = requests.recv().await {
+    while let Some(ReadRequest { read, reply }) = requests.recv().await {
         if reply.is_closed() {
             continue;
         }
-        let songs = if window.start == window.end {
-            Some(Vec::new())
-        } else if snapshots.borrow().state == PlayState::Offline {
-            None
-        } else {
-            match execute(&mpd, &mut client, async move |c| {
-                c.queue_range(window.range()).await
-            })
-            .await
-            {
-                Ok(songs) => Some(songs),
-                // The queue changed under the client; its state push follows.
-                Err(Error::Ack(ack)) => {
-                    tracing::debug!("{window:?}: {ack}");
+        let offline = snapshots.borrow().state == PlayState::Offline;
+        let message = match read {
+            Read::Window(window) => {
+                let songs = if window.start == window.end {
                     Some(Vec::new())
-                }
-                Err(error) => {
-                    tracing::warn!("{window:?}: {error}");
+                } else if offline {
                     None
+                } else {
+                    serve_window(&mpd, &mut client, music_url.as_deref(), window).await
+                };
+                window.reply(songs)
+            }
+            Read::Playlists if offline => playlists(None),
+            Read::Playlists => {
+                match execute(&mpd, &mut client, async |c| c.playlists().await).await {
+                    Ok(mut names) => {
+                        names.sort_unstable_by(|a, b| {
+                            lowercase(a).cmp(lowercase(b)).then_with(|| a.cmp(b))
+                        });
+                        playlists(Some(&names))
+                    }
+                    Err(error) => {
+                        tracing::warn!("listing playlists: {error}");
+                        playlists(None)
+                    }
                 }
             }
         };
-        let songs = songs.map(|songs| {
-            let music_url = music_url.as_deref();
+        // The client may have disconnected meanwhile.
+        let _ = reply.send(message);
+    }
+}
+
+fn lowercase(s: &str) -> impl Iterator<Item = char> + '_ {
+    s.chars().flat_map(char::to_lowercase)
+}
+
+async fn serve_window(
+    mpd: &Mpd,
+    client: &mut Option<Client>,
+    music_url: Option<&str>,
+    window: Window,
+) -> Option<Vec<Entry>> {
+    match execute(mpd, client, async move |c| {
+        c.queue_range(window.range()).await
+    })
+    .await
+    {
+        Ok(songs) => Some(
             songs
                 .into_iter()
                 .map(|s| Entry::new(s, music_url))
-                .collect()
-        });
-        // The client may have disconnected meanwhile.
-        let _ = reply.send(window.reply(songs));
+                .collect(),
+        ),
+        // The queue changed under the client; its state push follows.
+        Err(Error::Ack(ack)) => {
+            tracing::debug!("{window:?}: {ack}");
+            Some(Vec::new())
+        }
+        Err(error) => {
+            tracing::warn!("{window:?}: {error}");
+            None
+        }
     }
 }
 
@@ -804,12 +926,12 @@ mod tests {
         let (_snapshot_tx, snapshots) = watch::channel(playing);
         let (requests, request_rx) = mpsc::channel(4);
         let music_url = Some("https://m/".into());
-        tokio::spawn(serve_windows(mpd, music_url, request_rx, snapshots));
+        tokio::spawn(serve_reads(mpd, music_url, request_rx, snapshots));
         let (reply_tx, mut replies) = mpsc::unbounded_channel();
         let mut window = async |start: u32, end: u32| {
             let window = serde_json::json!({"version": 5, "start": start, "end": end});
-            let request = WindowRequest {
-                window: serde_json::from_value(window).unwrap(),
+            let request = ReadRequest {
+                read: Read::Window(serde_json::from_value(window).unwrap()),
                 reply: reply_tx.clone(),
             };
             requests.send(request).await.unwrap();
@@ -833,5 +955,110 @@ mod tests {
         let unserved =
             serde_json::json!({"type": "queue", "version": 5, "start": 0, "songs": null});
         assert_eq!(window(0, 2).await, unserved);
+    }
+
+    #[tokio::test]
+    async fn playlists_listed_sorted_or_null() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mpd = Arc::new(Mpd {
+            addr: listener.local_addr().unwrap().to_string(),
+            password: None,
+        });
+        let server = tokio::spawn(async move {
+            let mut s = accept(&listener).await;
+            let listing = "playlist: b\nLast-Modified: 2026-01-01T00:00:00Z\n\
+                           playlist: C\nplaylist: a\nplaylist: B\n";
+            reply(&mut s, "listplaylists\n", listing).await;
+            let mut line = String::new();
+            s.read_line(&mut line).await.unwrap();
+            assert_eq!(line, "listplaylists\n");
+            s.write_all(b"ACK [52@0] {listplaylists} Failed\n")
+                .await
+                .unwrap();
+        });
+        let (snapshot_tx, snapshots) = watch::channel(Snapshot::offline());
+        let (requests, request_rx) = mpsc::channel(4);
+        tokio::spawn(serve_reads(mpd, None, request_rx, snapshots));
+        let (reply_tx, mut replies) = mpsc::unbounded_channel();
+        let mut list = async || {
+            let request = ReadRequest {
+                read: Read::Playlists,
+                reply: reply_tx.clone(),
+            };
+            requests.send(request).await.unwrap();
+            serde_json::from_str::<serde_json::Value>(&replies.recv().await.unwrap()).unwrap()
+        };
+        let unserved = serde_json::json!({"type": "playlists", "names": null});
+        // Offline: answered without asking MPD, which would list names.
+        assert_eq!(list().await, unserved);
+        snapshot_tx.send_replace(Snapshot {
+            state: PlayState::Stop,
+            ..Snapshot::offline()
+        });
+        assert_eq!(
+            list().await,
+            serde_json::json!({"type": "playlists", "names": ["a", "B", "b", "C"]})
+        );
+        assert_eq!(list().await, unserved);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn loads_check_the_name_then_replace_the_queue() {
+        const LISTING: &str = "playlist: x\nplaylist: big\n";
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mpd = Arc::new(Mpd {
+            addr: listener.local_addr().unwrap().to_string(),
+            password: None,
+        });
+        let server = tokio::spawn(async move {
+            let mut s = accept(&listener).await;
+            let list = async |s: &mut BufReader<tokio::net::TcpStream>, name: &str| {
+                let mut lines = String::new();
+                for _ in 0..4 {
+                    s.read_line(&mut lines).await.unwrap();
+                }
+                assert_eq!(
+                    lines,
+                    format!("command_list_begin\nclear\nload \"{name}\"\ncommand_list_end\n")
+                );
+            };
+            reply(&mut s, "listplaylists\n", LISTING).await;
+            list(&mut s, "x").await;
+            s.write_all(b"OK\n").await.unwrap();
+            // Not listed: the next line is the following load's listing.
+            reply(&mut s, "listplaylists\n", LISTING).await;
+            reply(&mut s, "listplaylists\n", LISTING).await;
+            list(&mut s, "big").await;
+            s.write_all(b"ACK [51@1] {load} Playlist is too large\n")
+                .await
+                .unwrap();
+        });
+        let (snapshot_tx, snapshots) = watch::channel(Snapshot::offline());
+        let (jobs, job_rx) = mpsc::channel(4);
+        tokio::spawn(execute_commands(mpd, job_rx, snapshots));
+        let (reply_tx, mut replies) = mpsc::unbounded_channel();
+        let mut load = async |name: &str| {
+            let job = Job::Load {
+                name: name.into(),
+                reply: reply_tx.clone(),
+            };
+            jobs.send(job).await.unwrap();
+            serde_json::from_str::<serde_json::Value>(&replies.recv().await.unwrap()).unwrap()
+        };
+        let loaded = |name: &str, error: Option<&str>| serde_json::json!({"type": "loaded", "name": name, "error": error});
+        // Offline: answered without asking MPD, which would load it.
+        assert_eq!(load("x").await, loaded("x", Some("MPD offline")));
+        snapshot_tx.send_replace(Snapshot {
+            state: PlayState::Play,
+            ..Snapshot::offline()
+        });
+        assert_eq!(load("x").await, loaded("x", None));
+        assert_eq!(load("gone").await, loaded("gone", Some("No such playlist")));
+        assert_eq!(
+            load("big").await,
+            loaded("big", Some("Playlist is too large"))
+        );
+        server.await.unwrap();
     }
 }
