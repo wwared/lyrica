@@ -15,9 +15,10 @@
 
 :root {
   color-scheme: dark;
-  /* Gruvbox dark: bg0, fg1, fg4, bg2, then accents (orange is the dark
-     one, too dim for small text; the rest bright). */
+  /* Gruvbox dark: bg0, bg0_s, fg1, fg4, bg2, then accents (orange is the
+     dark one, too dim for small text; the rest bright). */
   --bg: #282828;
+  --bg-soft: #32302f;
   --fg: #ebdbb2;
   --muted: #a89984;
   --track: #504945;
@@ -150,6 +151,10 @@ body {
   column-gap: 12px;
   height: 56px;
   padding: 0 20px;
+}
+
+.queue-row.odd {
+  background: var(--bg-soft);
 }
 
 /* Drawn over the row, so a group start moves nothing. */

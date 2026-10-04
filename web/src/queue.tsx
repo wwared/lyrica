@@ -341,7 +341,8 @@ export function QueueList({
     const starts = store.starts(position);
     const cover =
       starts && entry!.folder ? covers.get(entry!.folder) : undefined;
-    let className = "queue-row";
+    // By position, not slot: a song keeps its shade across re-anchors.
+    let className = position % 2 ? "queue-row odd" : "queue-row";
     if (currentId !== null && entry?.id === currentId) className += " current";
     if (position > 0 && starts) className += " group";
     if (cover) className += " cover";
