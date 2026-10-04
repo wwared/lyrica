@@ -65,8 +65,9 @@ export function queueStore(
   let shown = false;
   let first = 0;
   let last = 0;
-  // Block → entries, current version only; `[]` when MPD rejected the range.
-  const blocks = new Map<number, Entry[]>();
+  // Block → entries and their queue version; `[]` when MPD rejected the range.
+  // Older versions are only kept in view, shown until replaced.
+  const blocks = new Map<number, { version: number; songs: Entry[] }>();
   // Replies to these still count against the limit, even for an older version.
   let inFlight: { version: number; block: number }[] = [];
   // Blocks waiting to be retried after a `null` reply.
@@ -77,12 +78,22 @@ export function queueStore(
   const kept = (block: number) =>
     block * BLOCK < last + KEEP_ROWS && (block + 1) * BLOCK > first - KEEP_ROWS;
 
-  const drop = () => {
+  // Keeps the blocks overlapping the visible rows when `keepVisible`.
+  const drop = (keepVisible: boolean) => {
     for (const timer of retries.values()) clearTimeout(timer);
     retries.clear();
-    if (blocks.size === 0) return;
-    blocks.clear();
-    listener?.stored(0, Infinity);
+    let dropped = false;
+    for (const [block, { songs }] of blocks)
+      if (
+        !keepVisible ||
+        songs.length === 0 ||
+        block * BLOCK >= last ||
+        (block + 1) * BLOCK <= first
+      ) {
+        blocks.delete(block);
+        dropped = true;
+      }
+    if (dropped) listener?.stored(0, Infinity);
   };
 
   const plan = () => {
@@ -93,7 +104,8 @@ export function queueStore(
     if (top >= bottom) return;
     for (const block of wanted(top, bottom, length)) {
       if (inFlight.length >= IN_FLIGHT) return;
-      if (blocks.has(block) || retries.has(block)) continue;
+      if (blocks.get(block)?.version === version || retries.has(block))
+        continue;
       if (inFlight.some((r) => r.version === version && r.block === block))
         continue;
       inFlight.push({ version, block });
@@ -113,7 +125,8 @@ export function queueStore(
       inFlight = [];
     },
     state(next) {
-      if (next === null || next.version !== queue?.version) drop();
+      if (next === null || next.version !== queue?.version)
+        drop(next !== null && queue !== null);
       queue = next;
       const position = next?.position ?? null;
       const id = next?.id ?? null;
@@ -139,8 +152,10 @@ export function queueStore(
             }, RETRY_MS),
           );
         } else {
-          blocks.set(block, songs);
-          if (songs.length > 0) listener?.stored(start, start + songs.length);
+          const replaced = blocks.has(block);
+          blocks.set(block, { version, songs });
+          if (songs.length > 0 || replaced)
+            listener?.stored(start, start + (songs.length || BLOCK));
         }
       }
       plan();
@@ -169,7 +184,9 @@ export function queueStore(
       return shown;
     },
     entry: (position) =>
-      blocks.get(Math.floor(position / BLOCK))?.[position % BLOCK],
+      queue !== null && position < queue.length
+        ? blocks.get(Math.floor(position / BLOCK))?.songs[position % BLOCK]
+        : undefined,
     subscribe(next) {
       listener = next;
       return () => {

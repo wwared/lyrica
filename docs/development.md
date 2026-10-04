@@ -23,7 +23,7 @@ A second MPD with its own library, database and queue under `/tmp`, so its queue
 - Library: tagged 1 s Opus files from `ffmpeg`, e.g. 20 albums × 10 tracks: `ffmpeg -loglevel error -f lavfi -i anullsrc=r=8000:cl=mono -t 1 -c:a libopus -b:a 6k -metadata title=… -metadata artist=… -metadata album=… -metadata track=N /tmp/lyrica-mpd/music/albumA/NN.opus` (1.5 s for all 200).
 - `/tmp/lyrica-mpd/mpd.conf`: `music_directory`, `playlist_directory` and `db_file` under `/tmp/lyrica-mpd`, `bind_to_address "127.0.0.1"`, `port "6602"`, an `audio_output` of `type "null"`, `max_playlist_length "200000"` (the default caps the queue at 16,384).
 - `mpd --no-daemon --stderr /tmp/lyrica-mpd/mpd.conf` builds the database on start.
-- A 175,000-entry queue: one command list of 875 `add ""` (each adds the whole library), sent over TCP in one write; returns at once. Then `mpc -p 6602 …` for changes, and lyrica with `--mpd 127.0.0.1:6602`. Tracks last 1 s: pause, or `repeat` + `single`, to keep the current song.
+- A 175,000-entry queue: one command list of 875 `add ""` (each adds the whole library), sent over TCP in one write; returns in ~50 ms. Then `mpc -p 6602 …` for changes, and lyrica with `--mpd 127.0.0.1:6602`. Tracks last 1 s: pause, or `repeat` + `single`, to keep the current song. Deleting most of the queue (`delete 87003:`) blocks MPD for ~9 s; `clear` doesn't.
 
 To test connection loss, run lyrica against a proxy and kill it, never MPD itself: `nix shell nixpkgs#socat -c socat TCP-LISTEN:6601,fork,reuseaddr TCP:127.0.0.1:6600`, start lyrica with `--mpd 127.0.0.1:6601`, then `pkill -f TCP-LISTEN:6601` (kills the forked per-connection children too).
 
