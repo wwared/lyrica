@@ -51,6 +51,7 @@ Cargo.toml               Rust workspace (shared deps in [workspace.dependencies]
 crates/mpd/              lyrica-mpd: MPD protocol client library
 crates/lyrica/           lyrica: server binary, embeds web/dist
 web/                     Preact + TypeScript PWA (Vite)
+web/icons/lyrica.png     App icon source (not shipped); icons in web/public/ are made from it
 docs/                    Project documentation
 ```
 
@@ -63,6 +64,20 @@ docs/                    Project documentation
 3. else an empty directory (with a cargo warning), so Rust-only work never needs a frontend build.
 
 Debug builds read embedded files from disk at runtime, so `npm run build` is picked up without recompiling Rust; release builds include the bytes. Files under `assets/` (content-hashed by Vite) are served as immutable; everything else with `no-cache`.
+
+## App icon
+
+Regenerate the icons in `web/public/` after changing `web/icons/lyrica.png` (square, full-bleed, opaque):
+
+```sh
+cd web
+for s in 512 192; do magick icons/lyrica.png -filter Lanczos -resize ${s}x$s -strip public/icon-$s.png; done
+magick icons/lyrica.png -filter Lanczos -resize 180x180 -strip public/apple-touch-icon.png
+magick icons/lyrica.png -filter Lanczos -resize 32x32 -strip public/favicon.png
+nix shell nixpkgs#oxipng -c oxipng -o max --strip all public/*.png
+```
+
+`magick` is `nixpkgs#imagemagick`.
 
 ## NixOS module
 

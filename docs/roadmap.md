@@ -4,12 +4,13 @@ Work proceeds bottom-up in small steps, each usable on its own. Design details l
 
 ## Current state
 
-Now playing is done, including seeking on the bar in full mode. The queue area above it (mini mode) is an empty placeholder, there are no stored playlists, and the PWA has no icon.
+Now playing is done, including seeking on the bar in full mode. The queue area above it (mini mode) is an empty placeholder and there are no stored playlists.
 
 - **Foundation:** Nix flake (dev shell, build, fmt, check, NixOS module); `lyrica-mpd` with the commands now playing needs; server bridging WebSocket clients to MPD (idle and command connections, reconnect with backoff, offline state); frontend embedded in the binary.
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
 - **Play here:** plays MPD's `httpd` stream in the browser, with title, artist, album and cover on the lock screen.
 - **iOS fit:** fixed viewport (no bounce, no zoom, no selection), full height in home-screen apps, safe areas, light / dark mode.
+- **PWA:** app icon and favicon, screen kept on while visible, portrait on Android.
 
 ## Next phases (in order)
 
@@ -44,11 +45,9 @@ A dedicated button opens the list; there is no general settings menu.
 
 ### PWA polish
 
-There is no app icon or favicon yet. No service worker or offline shell (caching the app so it launches without a network): it is useless without the server and MPD anyway.
+No service worker or offline shell (caching the app so it launches without a network): it is useless without the server and MPD anyway.
 
-1. **Icon artwork:** one design, exported at the sizes the manifest and iOS need.
-2. **Icon wiring:** manifest `icons`, `apple-touch-icon` and favicon.
-3. **Launch colour:** the manifest's `background_color` is fixed to the dark background; check what iOS shows while launching in light mode and match it.
+1. **Launch colour:** the manifest's `background_color` is fixed to the dark background; check what iOS shows while launching in light mode and match it.
 
 ### Colour scheme
 
