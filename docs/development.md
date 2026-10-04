@@ -30,6 +30,10 @@ chromium --headless=new --no-sandbox --password-store=basic --use-mock-keychain 
 
 Drive it over CDP. Useful calls: `Emulation.setDeviceMetricsOverride` (390×844, `mobile: true`) for the iPhone viewport, `Runtime.evaluate` to read the DOM and click, `Page.setWebLifecycleState` (`frozen` then `active`) or `Emulation.setFocusEmulationEnabled` plus dispatching `visibilitychange` to simulate the page being hidden and shown. A Bun or Node WebSocket client is handy for raw protocol checks.
 
+## Frontend gotchas
+
+- Preact 11 no longer appends `px` to numeric style values: `style={{ height: 100 }}` is ignored; write `` `${n}px` ``.
+
 ## Commands
 
 | Command                          | What it does                                                                                 |
