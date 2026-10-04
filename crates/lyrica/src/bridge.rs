@@ -3,6 +3,7 @@
 
 use std::{
     convert::Infallible,
+    ops::Range,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -14,6 +15,9 @@ use tokio::sync::{mpsc, watch};
 
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(10);
+/// Most entries per window: ~0.8 ms of MPD time (`docs/architecture.md` →
+/// "Queue measurements").
+const MAX_WINDOW: u32 = 200;
 /// Escaped in URL path segments: everything but RFC 3986 unreserved characters.
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -106,6 +110,37 @@ enum ServerMessage<'a> {
         single: bool,
         queue: Option<Queue>,
     },
+    Queue {
+        version: u32,
+        start: u32,
+        songs: Option<Vec<Entry>>,
+    },
+}
+
+/// Queue entry as shown in the list; its position is implied by the window.
+#[derive(Debug, Serialize)]
+struct Entry {
+    id: Option<u32>,
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+    track: Option<u32>,
+    duration: Option<f64>,
+    folder: Option<String>,
+}
+
+impl Entry {
+    fn new(mut song: Song, music_url: Option<&str>) -> Self {
+        Entry {
+            id: song.id,
+            artist: artist(&mut song),
+            album: album(&mut song),
+            track: song.track,
+            duration: song.duration.map(|d| d.as_secs_f64()),
+            folder: music_url.and_then(|m| folder(m, &song.file)),
+            title: title(song),
+        }
+    }
 }
 
 impl Snapshot {
@@ -179,6 +214,65 @@ fn seconds<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Duration
     Duration::try_from_secs_f64(f64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
 }
 
+/// Client request for the queue entries at positions `start..end`, made with
+/// queue `version`. Requests with `start` > `end` are invalid; `end` is
+/// clamped to `start + MAX_WINDOW`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(try_from = "RawWindow")]
+pub struct Window {
+    version: u32,
+    start: u32,
+    end: u32,
+}
+
+#[derive(Deserialize)]
+struct RawWindow {
+    version: u32,
+    start: u32,
+    end: u32,
+}
+
+impl TryFrom<RawWindow> for Window {
+    type Error = &'static str;
+
+    fn try_from(raw: RawWindow) -> Result<Self, Self::Error> {
+        if raw.start > raw.end {
+            return Err("window starts after its end");
+        }
+        Ok(Window {
+            version: raw.version,
+            start: raw.start,
+            end: raw.end.min(raw.start.saturating_add(MAX_WINDOW)),
+        })
+    }
+}
+
+impl Window {
+    fn range(self) -> Range<u32> {
+        self.start..self.end
+    }
+
+    /// JSON `queue` reply for a window that couldn't be served now.
+    pub fn unserved(self) -> String {
+        self.reply(None)
+    }
+
+    fn reply(self, songs: Option<Vec<Entry>>) -> String {
+        let message = ServerMessage::Queue {
+            version: self.version,
+            start: self.start,
+            songs,
+        };
+        serde_json::to_string(&message).expect("queue message serializes")
+    }
+}
+
+/// A window and where its reply goes.
+pub struct WindowRequest {
+    pub window: Window,
+    pub reply: mpsc::UnboundedSender<String>,
+}
+
 /// Keeps `snapshots` current, reconnecting with backoff while MPD is
 /// unreachable. `music_url` is the HTTP mirror of MPD's music directory,
 /// ending in `/`.
@@ -234,9 +328,7 @@ async fn fetch(client: &mut Client, music_url: Option<&str>) -> Result<Snapshot>
         duration: status
             .duration
             .or_else(|| song.as_ref().and_then(|s| s.duration)),
-        artist: song
-            .as_mut()
-            .and_then(|s| s.artist.take().or_else(|| s.album_artist.take())),
+        artist: song.as_mut().and_then(artist),
         album: song.as_mut().and_then(album),
         folder: music_url
             .zip(song.as_ref())
@@ -263,6 +355,11 @@ fn title(song: Song) -> String {
             Some((_, name)) => name.to_owned(),
             None => song.file,
         })
+}
+
+/// The first `Artist` tag, falling back to the first `AlbumArtist`.
+fn artist(song: &mut Song) -> Option<String> {
+    song.artist.take().or_else(|| song.album_artist.take())
 }
 
 /// The `Album` tag, falling back to the name of the file's folder; `None` for
@@ -307,9 +404,56 @@ pub async fn execute_commands(
             tracing::info!("MPD offline; dropping {command:?}");
             continue;
         };
-        if let Err(error) = execute(&mpd, &mut client, action).await {
+        if let Err(error) = execute(&mpd, &mut client, async move |c| action.run(c).await).await {
             tracing::warn!("{command:?}: {error}");
         }
+    }
+}
+
+/// Serves queue windows for all WebSocket clients, one at a time, on a
+/// dedicated connection, so state pushes and commands never wait on them.
+pub async fn serve_windows(
+    mpd: Arc<Mpd>,
+    music_url: Option<String>,
+    mut requests: mpsc::Receiver<WindowRequest>,
+    snapshots: watch::Receiver<Snapshot>,
+) {
+    let mut client = None;
+    while let Some(WindowRequest { window, reply }) = requests.recv().await {
+        if reply.is_closed() {
+            continue;
+        }
+        let songs = if window.start == window.end {
+            Some(Vec::new())
+        } else if snapshots.borrow().state == PlayState::Offline {
+            None
+        } else {
+            match execute(&mpd, &mut client, async move |c| {
+                c.queue_range(window.range()).await
+            })
+            .await
+            {
+                Ok(songs) => Some(songs),
+                // The queue changed under the client; its state push follows.
+                Err(Error::Ack(ack)) => {
+                    tracing::debug!("{window:?}: {ack}");
+                    Some(Vec::new())
+                }
+                Err(error) => {
+                    tracing::warn!("{window:?}: {error}");
+                    None
+                }
+            }
+        };
+        let songs = songs.map(|songs| {
+            let music_url = music_url.as_deref();
+            songs
+                .into_iter()
+                .map(|s| Entry::new(s, music_url))
+                .collect()
+        });
+        // The client may have disconnected meanwhile.
+        let _ = reply.send(window.reply(songs));
     }
 }
 
@@ -361,21 +505,25 @@ impl Action {
     }
 }
 
-/// Runs `action`, reconnecting first if `client` is gone. A reused
-/// connection may have been closed by MPD's `connection_timeout` without
-/// running the command, so connection errors on it are retried once.
-async fn execute(mpd: &Mpd, client: &mut Option<Client>, action: Action) -> Result<()> {
+/// Runs `run`, reconnecting first if `client` is gone. A reused connection
+/// may have been closed by MPD's `connection_timeout` without running the
+/// command, so connection errors on it are retried once.
+async fn execute<T>(
+    mpd: &Mpd,
+    client: &mut Option<Client>,
+    mut run: impl AsyncFnMut(&mut Client) -> Result<T>,
+) -> Result<T> {
     let reused = client.is_some();
     let conn = match client {
         Some(conn) => conn,
         None => client.insert(mpd.connect().await?),
     };
-    let mut result = action.run(conn).await;
+    let mut result = run(conn).await;
     if reused && matches!(result, Err(Error::Io(_) | Error::Broken)) {
-        tracing::debug!("command connection lost; reconnecting");
+        tracing::debug!("MPD connection lost; reconnecting");
         *client = None;
         let conn = client.insert(mpd.connect().await?);
-        result = action.run(conn).await;
+        result = run(conn).await;
     }
     if let Err(error) = &result
         && !matches!(error, Error::Ack(_))
@@ -599,11 +747,71 @@ mod tests {
             expect(&mut second, "pause \"1\"\n").await;
         });
         let mut client = None;
-        execute(&mpd, &mut client, Action::Next).await.unwrap();
+        execute(&mpd, &mut client, async |c| c.next().await)
+            .await
+            .unwrap();
         closed.await.unwrap();
-        execute(&mpd, &mut client, Action::Pause(true))
+        execute(&mpd, &mut client, async |c| c.pause(true).await)
             .await
             .unwrap();
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn windows_are_capped_and_failures_reported() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mpd = Arc::new(Mpd {
+            addr: listener.local_addr().unwrap().to_string(),
+            password: None,
+        });
+        let server = tokio::spawn(async move {
+            let mut s = accept(&listener).await;
+            let songs = "file: a/b/c.flac\nTitle: t\nArtist: ar\nAlbum: al\nTrack: 3\n\
+                         duration: 61.5\nPos: 0\nId: 9\n\
+                         file: d/e.flac\nAlbumArtist: aa\nPos: 1\nId: 4\n";
+            reply(&mut s, "playlistinfo \"0:2\"\n", songs).await;
+            let mut line = String::new();
+            s.read_line(&mut line).await.unwrap();
+            assert_eq!(line, "playlistinfo \"7:207\"\n");
+            s.write_all(b"ACK [2@0] {playlistinfo} Bad song index\n")
+                .await
+                .unwrap();
+        });
+        let playing = Snapshot {
+            state: PlayState::Play,
+            ..Snapshot::offline()
+        };
+        let (_snapshot_tx, snapshots) = watch::channel(playing);
+        let (requests, request_rx) = mpsc::channel(4);
+        let music_url = Some("https://m/".into());
+        tokio::spawn(serve_windows(mpd, music_url, request_rx, snapshots));
+        let (reply_tx, mut replies) = mpsc::unbounded_channel();
+        let mut window = async |start: u32, end: u32| {
+            let window = serde_json::json!({"version": 5, "start": start, "end": end});
+            let request = WindowRequest {
+                window: serde_json::from_value(window).unwrap(),
+                reply: reply_tx.clone(),
+            };
+            requests.send(request).await.unwrap();
+            serde_json::from_str::<serde_json::Value>(&replies.recv().await.unwrap()).unwrap()
+        };
+        assert_eq!(
+            window(0, 2).await,
+            serde_json::json!({"type": "queue", "version": 5, "start": 0, "songs": [
+                {"id": 9, "title": "t", "artist": "ar", "album": "al", "track": 3,
+                 "duration": 61.5, "folder": "https://m/a/b/"},
+                {"id": 4, "title": "e.flac", "artist": "aa", "album": "d", "track": null,
+                 "duration": null, "folder": "https://m/d/"},
+            ]})
+        );
+        // Empty: answered without asking MPD, whose next line must be 7:207.
+        assert_eq!(window(5, 5).await["songs"], serde_json::json!([]));
+        // MPD rejects the range: nothing there.
+        assert_eq!(window(7, 100_000).await["songs"], serde_json::json!([]));
+        server.await.unwrap();
+        // MPD gone after the retry: not served.
+        let unserved =
+            serde_json::json!({"type": "queue", "version": 5, "start": 0, "songs": null});
+        assert_eq!(window(0, 2).await, unserved);
     }
 }
