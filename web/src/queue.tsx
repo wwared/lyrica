@@ -1,7 +1,7 @@
 import { useLayoutEffect, useReducer, useRef } from "preact/hooks";
 import { covers, findCover } from "./cover";
 import { formatTime } from "./progress";
-import type { QueueStore } from "./queue-store";
+import { AHEAD_VIEWPORTS, type QueueStore } from "./queue-store";
 import {
   centre,
   firstRow,
@@ -20,6 +20,14 @@ import type { Command } from "./ws";
 const SETTLE_MS = 150;
 // Auto-centring resumes this long after the last scroll by the user.
 const RESUME_MS = 15_000;
+// Faster, rows cross the list before their covers could arrive.
+const AHEAD_ROWS_PER_S = 100;
+// Scroll speed is measured over this long.
+const SPEED_MS = 100;
+// Scrolling passes run every frame: none for this long means stopped.
+const STOPPED_MS = 50;
+// A 580 px list's groups, so the visible ones never wait.
+const AHEAD_PROBES = 12;
 
 /**
  * The queue's virtual list (architecture.md → "Live queue"). Scroll state
@@ -85,8 +93,12 @@ export function QueueList({
     let frame = 0;
     let settle = 0;
     let touches = 0;
-    // No scroll for SETTLE_MS and no touch held: covers may be probed.
-    let still = false;
+    // Recent [time, queue offset] pairs, flat, oldest first.
+    const moves: number[] = [];
+    // Of the last movement: 1 down, -1 up.
+    let direction = 1;
+    let slowed = 0;
+    const probing = new Set<string>();
     let disposed = false;
     // User input on the list stops auto-centring until `resume` fires.
     let paused = false;
@@ -98,7 +110,10 @@ export function QueueList({
     };
     const centred = () => {
       const { position } = store.current;
-      if (position !== null) place(centre(position, v.viewportPx, v.length));
+      if (position === null) return;
+      place(centre(position, v.viewportPx, v.length));
+      // A jump, not scrolling.
+      moves.length = 0;
     };
     const pass = () => {
       frame = 0;
@@ -114,28 +129,81 @@ export function QueueList({
         render(0);
       probe();
     };
-    // A miss shows nothing new: the track number stays.
-    const arrived = (cover: string | null) => {
-      if (cover === null || disposed) return;
-      v.stale = true;
+    // Found or not, the freed slot goes to the nearest unknown folder then.
+    const probed = (folder: string, cover: string | null) => {
+      probing.delete(folder);
+      if (disposed) return;
+      if (cover !== null) v.stale = true;
       if (frame === 0) frame = requestAnimationFrame(pass);
     };
-    // Visible group starts only, not the pool's margin rows.
+    const tooFast = (offset: number) => {
+      const now = performance.now();
+      const n = moves.length;
+      if (n > 0 && offset !== moves[n - 1]) {
+        direction = offset > moves[n - 1]! ? 1 : -1;
+      }
+      // After a pause, the previous position counts as SPEED_MS ago.
+      let since = n > 0 ? now - SPEED_MS : now;
+      let from = n > 0 ? moves[n - 1]! : offset;
+      let drop = 0;
+      while (drop < n && moves[drop]! <= now - SPEED_MS) drop += 2;
+      moves.splice(0, drop);
+      if (moves.length > 0) {
+        since = moves[0]!;
+        from = moves[1]!;
+      }
+      moves.push(now, offset);
+      const pxPerMs = Math.abs(offset - from) / Math.max(now - since, 16);
+      return pxPerMs > (AHEAD_ROWS_PER_S * ROW_PX) / 1000;
+    };
+    // The visible group starts, then those within AHEAD_VIEWPORTS on the
+    // scroll's side, then the other side, nearest first.
     const probe = () => {
-      if (!still || !store.shown) return;
+      if (!store.shown || disposed) return;
       const offset = v.anchor * ROW_PX + v.scrollTop;
+      clearTimeout(slowed);
+      if (tooFast(offset)) {
+        slowed = setTimeout(stopped, STOPPED_MS);
+        return;
+      }
+      const first = Math.floor(offset / ROW_PX);
       const last = Math.min(
         v.length,
         Math.ceil((offset + v.viewportPx) / ROW_PX),
       );
-      for (let p = Math.floor(offset / ROW_PX); p < last; p++) {
+      const rows = (last - first) * AHEAD_VIEWPORTS;
+      const start = (p: number) => {
         const folder = store.entry(p)?.folder;
-        if (folder && !covers.has(folder) && store.starts(p))
-          findCover(folder).then(arrived);
+        if (!folder || covers.has(folder) || probing.has(folder)) return;
+        if (!store.starts(p)) return;
+        probing.add(folder);
+        findCover(folder).then((cover) => probed(folder, cover));
+      };
+      const below = () => {
+        const end = Math.min(v.length, last + rows);
+        for (let p = last; p < end && probing.size < AHEAD_PROBES; p++)
+          start(p);
+      };
+      const above = () => {
+        const end = Math.max(0, first - rows);
+        for (let p = first - 1; p >= end && probing.size < AHEAD_PROBES; p--)
+          start(p);
+      };
+      for (let p = first; p < last && probing.size < AHEAD_PROBES; p++)
+        start(p);
+      if (direction > 0) {
+        below();
+        above();
+      } else {
+        above();
+        below();
       }
     };
+    const stopped = () => {
+      moves.length = 0;
+      probe();
+    };
     const unsettle = () => {
-      still = false;
       clearTimeout(settle);
       settle = setTimeout(settled, SETTLE_MS);
     };
@@ -159,7 +227,7 @@ export function QueueList({
         centred();
         report();
         render(0);
-        unsettle();
+        probe();
       },
     });
     const resumed = () => {
@@ -179,13 +247,11 @@ export function QueueList({
     };
     const settled = () => {
       if (touches > 0) return;
-      still = true;
       const next = reanchor(v.anchor, el.scrollTop, v.length);
       if (next !== null) {
         place(next);
         render(0);
       }
-      probe();
     };
     const onScroll = () => {
       if (frame === 0) frame = requestAnimationFrame(pass);
@@ -194,7 +260,6 @@ export function QueueList({
     };
     const onTouchStart = (e: TouchEvent) => {
       touches = e.touches.length;
-      still = false;
       pause();
     };
     const onTouchEnd = (e: TouchEvent) => {
@@ -240,6 +305,7 @@ export function QueueList({
       unsubscribe();
       cancelAnimationFrame(frame);
       clearTimeout(settle);
+      clearTimeout(slowed);
       clearTimeout(resume);
       resized.disconnect();
       el.removeEventListener("scroll", onScroll);

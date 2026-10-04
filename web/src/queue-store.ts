@@ -56,6 +56,8 @@ export type QueueStore = {
 export const BLOCK = 100;
 /** Rows kept beyond the visible ones on each side. */
 export const KEEP_ROWS = 1000;
+/** Viewports loaded ahead on each side: entries here, covers in the list. */
+export const AHEAD_VIEWPORTS = 2;
 export const IN_FLIGHT = 2;
 export const RETRY_MS = 1000;
 
@@ -225,13 +227,13 @@ export function queueStore(
 
 /**
  * Blocks to load for the visible positions `first` to `last - 1`: the visible
- * ones, then those within one viewport, nearest first, ties below.
+ * ones, then those within `AHEAD_VIEWPORTS`, nearest first, ties below.
  */
 function* wanted(first: number, last: number, length: number) {
   const top = Math.floor(first / BLOCK);
   const bottom = Math.floor((last - 1) / BLOCK);
   for (let block = top; block <= bottom; block++) yield block;
-  const rows = last - first;
+  const rows = (last - first) * AHEAD_VIEWPORTS;
   const lowest = Math.floor(Math.max(0, first - rows) / BLOCK);
   const highest = Math.floor((Math.min(length, last + rows) - 1) / BLOCK);
   let above = top - 1;

@@ -50,7 +50,7 @@ const listen = (overrides: Partial<Listener>): Listener => ({
 describe("planning", () => {
   test("visible blocks first, then nearest, ties below, two at a time", () => {
     const { store, sent, starts, answer } = setup();
-    // One viewport (100 rows) beyond reaches blocks 10 and 13, 50 rows away each.
+    // Two viewports (200 rows) beyond reach blocks 9 and 14, 150 rows away each.
     store.view(1150, 1250);
     const [a, b] = sent.splice(0);
     expect([a!.start, b!.start]).toEqual([1099, 1199]);
@@ -59,7 +59,11 @@ describe("planning", () => {
     answer(b!);
     expect(starts()).toEqual([1000]);
     store.reply(1, 1300, songs(1300, 1400));
+    expect(starts()).toEqual([1400]);
     store.reply(1, 1000, songs(1000, 1100));
+    expect(starts()).toEqual([900]);
+    store.reply(1, 1400, songs(1400, 1500));
+    store.reply(1, 900, songs(900, 1000));
     expect(starts()).toEqual([]);
   });
 
@@ -201,11 +205,11 @@ describe("replies", () => {
 });
 
 describe("new version", () => {
-  /** Blocks 10 to 13 loaded at version 1, rows 1150 to 1249 visible. */
+  /** Blocks 9 to 14 loaded at version 1, rows 1150 to 1249 visible. */
   function loaded(length = LONG) {
     const t = setup(length);
     t.store.view(1150, 1250);
-    for (let i = 0; i < 4; i++) t.answer(t.sent.shift()!);
+    for (let i = 0; i < 6; i++) t.answer(t.sent.shift()!);
     const announced: [number, number][] = [];
     t.store.subscribe(
       listen({ stored: (start, end) => announced.push([start, end]) }),
@@ -376,7 +380,7 @@ describe("album groups", () => {
   test("after a new version, each block keeps its own leading entry", () => {
     const { store, sent } = setup();
     store.view(1150, 1250);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       const w = sent.shift()!;
       store.reply(
         1,
