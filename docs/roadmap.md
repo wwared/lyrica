@@ -4,7 +4,7 @@ Work proceeds bottom-up in small steps, each usable on its own. Design details l
 
 ## Current state
 
-Now playing and the live queue are done and checked on an iPhone; one bounce fix awaits its phone check, and the design is open to refinement (see "Open work"). There are no stored playlists yet.
+Now playing and the live queue are done and checked on an iPhone. There are no stored playlists yet.
 
 - **Foundation:** Nix flake (dev shell, build, fmt, check, NixOS module); `lyrica-mpd` with the commands lyrica needs; server bridging WebSocket clients to MPD (idle, command and queue connections, reconnect with backoff, offline state); frontend embedded in the binary.
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
@@ -16,13 +16,7 @@ Now playing and the live queue are done and checked on an iPhone; one bounce fix
 
 ## Open work
 
-### Live queue phone check
-
-- **Top bounce:** with the list near the queue's start, a fling into the top's rubber band leaves the rows filled, also after a song change and full → mini (`architecture.md` → "Virtual list"; headless Chromium has no rubber band, so the fix was checked by simulating WebKit's negative `scrollTop`).
-
-### Live queue design refinements
-
-The row layout and album styling are open to iteration from daily use (`architecture.md` → "Rows").
+- **Live queue design:** the row layout and album styling are open to iteration from daily use (`architecture.md` → "Rows").
 
 ## Next phase: stored playlists
 
