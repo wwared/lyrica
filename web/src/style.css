@@ -15,11 +15,17 @@
 
 :root {
   color-scheme: dark;
-  /* Gruvbox dark: bg0, fg1, fg4, bg2. */
+  /* Gruvbox dark: bg0, fg1, fg4, bg2, then the bright accents. */
   --bg: #282828;
   --fg: #ebdbb2;
   --muted: #a89984;
   --track: #504945;
+  --yellow: #fabd2f;
+  --orange: #fe8019;
+  --green: #b8bb26;
+  --aqua: #8ec07c;
+  --blue: #83a598;
+  --purple: #d3869b;
   font-family:
     "Iosevka Aile",
     system-ui,
@@ -283,7 +289,7 @@ body {
 
 .fill {
   height: 100%;
-  background: var(--fg);
+  background: var(--yellow);
   transform: scaleX(0);
   transform-origin: left;
   will-change: transform;
@@ -374,7 +380,7 @@ body {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--fg);
+  background: var(--yellow);
   transform: translate(-50%, -50%);
 }
 
@@ -459,6 +465,14 @@ body {
   background: var(--track);
 }
 
+.transport button {
+  color: var(--orange);
+}
+
+.transport .toggle {
+  color: var(--yellow);
+}
+
 .controls button:disabled {
   color: var(--muted);
   opacity: 0.5;
@@ -484,8 +498,20 @@ body {
   color: var(--muted);
 }
 
+.modes .random {
+  --on: var(--aqua);
+}
+
+.modes .single {
+  --on: var(--blue);
+}
+
+.modes .repeat {
+  --on: var(--purple);
+}
+
 .modes button[aria-pressed="true"] {
-  color: var(--fg);
+  color: var(--on);
 }
 
 .modes svg {
@@ -509,9 +535,12 @@ body {
   color: var(--muted);
 }
 
-.controls .extras button[aria-pressed="true"],
+.controls .extras button[aria-pressed="true"] {
+  color: var(--green);
+}
+
 .controls .extras button[aria-expanded="true"] {
-  color: var(--fg);
+  color: var(--orange);
 }
 
 .extras svg {

@@ -10,7 +10,7 @@ Now playing is done, including seeking on the bar in full mode. The queue area a
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
 - **Play here:** plays MPD's `httpd` stream in the browser, with title, artist, album and cover on the lock screen.
 - **iOS fit:** fixed viewport (no bounce, no zoom, no selection), full height in home-screen apps, safe areas.
-- **Dark only:** gruvbox dark, regardless of the system setting.
+- **Dark only:** gruvbox dark with its accent colours, regardless of the system setting.
 - **PWA:** app icon and favicon, screen kept on while visible, portrait on Android.
 
 ## Next phases (in order)
@@ -30,7 +30,7 @@ Read-only: no reordering, adding, removing or consume mode. The only way the que
 3. **Queue windows over the WS:** the client requests a position range; the server answers with those entries. Fetched off the idle connection so now playing never waits on it.
 4. **Virtual list:** the queue area becomes its own scroll container sized to the whole queue, rendering only the rows near the viewport, fixed row height.
 5. **Lazy loading while scrolling:** windows load ahead in both directions with enough margin that scrolling never shows missing rows; far-away windows are dropped.
-6. **Auto-centre:** opens centred on the current song and re-centres when it changes. Scrolling by the user pauses it; 15 s after scrolling stops it resumes and re-centres on the current song.
+6. **Auto-centre:** opens centred on the current song, highlighted with an accent colour, and re-centres when it changes. Scrolling by the user pauses it; 15 s after scrolling stops it resumes and re-centres on the current song.
 7. **Auto-update:** idle on `playlist`; a new queue version invalidates loaded windows and reloads the visible ones.
 8. **Album grouping:** adjacent tracks from the same album form a group with a small separator.
 9. **Lazy cover art per group:** one cover per album group from the HTTP mirror, loaded only when visible, sharing the now-playing cover cache.
@@ -43,12 +43,6 @@ A dedicated button opens the list; there is no general settings menu.
 1. **Playlist protocol in `lyrica-mpd`:** `listplaylists`, `clear`, `load`.
 2. **Playlists over the WS:** list request and reply; a load command that clears the queue and loads the playlist.
 3. **Playlists button and list:** opens a list of stored playlists; tapping one replaces the queue.
-
-### Colour scheme
-
-Every colour is one of four CSS variables (background, foreground, muted, bar track), mapped to gruvbox dark, plus the `theme-color` meta tag and manifest colours, which repeat the background.
-
-1. **Accents:** gruvbox accent colours for highlights (on toggles, progress and volume fill, current queue track); exact use to iterate on.
 
 ## Later (to design)
 

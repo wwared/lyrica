@@ -141,6 +141,7 @@ export function App() {
             {MODES.map(({ mode, label, path }) => (
               <button
                 key={mode}
+                class={mode}
                 aria-label={label}
                 aria-pressed={snapshot?.[mode] ?? false}
                 disabled={disabled}
