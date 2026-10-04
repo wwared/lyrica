@@ -4,7 +4,7 @@ Work proceeds bottom-up in small steps, each usable on its own. Design details l
 
 ## Current state
 
-Now playing and the live queue are done and checked on an iPhone. Stored playlists are done and checked in headless Chromium; the check on the phones is left.
+Now playing, the live queue and stored playlists are done and checked on phones.
 
 - **Foundation:** Nix flake (dev shell, build, fmt, check, NixOS module); `lyrica-mpd` with the commands lyrica needs; server bridging WebSocket clients to MPD (idle, command and queue connections, reconnect with backoff, offline state, stored playlist listing and loading); frontend embedded in the binary.
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
@@ -19,17 +19,8 @@ Now playing and the live queue are done and checked on an iPhone. Stored playlis
 
 - **Live queue design:** the row layout and album styling are open to iteration from daily use (`architecture.md` → "Rows").
 
-## Next phase: stored playlists
-
-A load button at the left of the mini-mode toolbar lists the server's stored playlists on each tap and opens them in a modal; selecting one and tapping "Load" closes it and replaces the queue, with a "Loading…" box until MPD is done (`architecture.md` → "Stored playlists"). No general settings menu. Loading never touches the real MPD's queue during development: throwaway MPD or scripted fake (`development.md`). Every step keeps the responsiveness checks (`architecture.md` → "Responsiveness").
-
-1. **Playlist protocol in `lyrica-mpd`:** done. `Client::playlists()` and `Client::replace_queue(name)` (`clear` + `load` in one private command list); measurements and failure modes in `architecture.md` → "Queue measurements". Main finding: a load blocks MPD for every client while it runs, up to ~20 s for the real MPD's large playlists (estimated from `playlistlength`).
-2. **Playlists over the WS:** done. `{"type":"playlists"}` (queue connection) and `{"type":"load","name"}` (command connection, checked against a fresh listing first), each answered to its client alone; protocol, errors and measurements in `architecture.md` → "MPD bridge" → "Stored playlists".
-3. **Load button and dialogs:** done. `playlists.tsx`, `Connection.playlists()` / `load(name)` in `ws.ts`, `QueueStore.top()`; design and measurements in `architecture.md` → "Stored playlists" and "Measurements".
-4. **By hand on the phones** (iPhone home-screen app, Android): dialog layout and scrolling, backdrop tap, the Loading box and the jump to top, the error modal, the toast. The user's call: on the deployed server a load replaces the real queue.
-
 ## Later (to design)
 
-Ideas to revisit once the phases above are done; how they look and work is open.
+Ideas to revisit; how they look and work is open.
 
 - **Queue actions:** convenience buttons in the mini-mode toolbar. Example: play the current album from the start — jump to the first track of the current song's album in the queue, play it, and turn random off (done by hand today). The set of actions and how to find album boundaries without fetching the whole queue are open.
