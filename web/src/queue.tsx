@@ -1,4 +1,6 @@
 import { useLayoutEffect, useReducer, useRef } from "preact/hooks";
+import { formatTime } from "./progress";
+import type { QueueStore } from "./queue-store";
 import {
   firstRow,
   poolSize,
@@ -16,9 +18,15 @@ const SETTLE_MS = 150;
 /**
  * The queue's virtual list (architecture.md → "Live queue"). Scroll state
  * lives in a ref, not in Preact state: the scroll handler re-renders only when
- * the first rendered row changes.
+ * the first rendered row changes, or when entries arrived for rendered rows.
  */
-export function QueueList({ length }: { length: number }) {
+export function QueueList({
+  length,
+  store,
+}: {
+  length: number;
+  store: QueueStore;
+}) {
   const list = useRef<HTMLDivElement>(null);
   const [, render] = useReducer((n: number) => n + 1, 0);
   const v = useRef({
@@ -28,9 +36,19 @@ export function QueueList({ length }: { length: number }) {
     viewportPx: 0,
     // Rendered first space row, compared on scroll.
     first: 0,
+    // Entries arrived for rendered rows since the last render.
+    stale: false,
     // Written in the layout effect, together with the anchor it belongs to.
     pendingScrollTop: null as number | null,
   }).current;
+
+  const report = () => {
+    const offset = v.anchor * ROW_PX + v.scrollTop;
+    store.view(
+      Math.floor(offset / ROW_PX),
+      Math.min(v.length, Math.ceil((offset + v.viewportPx) / ROW_PX)),
+    );
+  };
 
   if (length !== v.length) {
     const scrollTop = list.current?.scrollTop ?? 0;
@@ -43,9 +61,11 @@ export function QueueList({ length }: { length: number }) {
   }
 
   useLayoutEffect(() => {
-    if (v.pendingScrollTop === null) return;
-    list.current!.scrollTop = v.pendingScrollTop;
-    v.pendingScrollTop = null;
+    if (v.pendingScrollTop !== null) {
+      list.current!.scrollTop = v.pendingScrollTop;
+      v.pendingScrollTop = null;
+    }
+    report();
   });
 
   useLayoutEffect(() => {
@@ -56,9 +76,20 @@ export function QueueList({ length }: { length: number }) {
     const pass = () => {
       frame = 0;
       v.scrollTop = el.scrollTop;
+      report();
       const pool = poolSize(v.viewportPx, v.length);
-      if (firstRow(v.scrollTop, pool, v.length) !== v.first) render(0);
+      if (v.stale || firstRow(v.scrollTop, pool, v.length) !== v.first)
+        render(0);
     };
+    // Never renders here: replies arrive in the socket's message handler,
+    // possibly just ahead of a state push.
+    const unsubscribe = store.subscribe((start, end) => {
+      const rendered = v.anchor + v.first;
+      if (end <= rendered) return;
+      if (start >= rendered + poolSize(v.viewportPx, v.length)) return;
+      v.stale = true;
+      if (frame === 0) frame = requestAnimationFrame(pass);
+    });
     const settled = () => {
       if (touches > 0) return;
       const next = reanchor(v.anchor, el.scrollTop, v.length);
@@ -90,6 +121,7 @@ export function QueueList({ length }: { length: number }) {
     el.addEventListener("touchend", onTouchEnd, passive);
     el.addEventListener("touchcancel", onTouchEnd, passive);
     return () => {
+      unsubscribe();
       cancelAnimationFrame(frame);
       clearTimeout(settle);
       resized.disconnect();
@@ -102,10 +134,15 @@ export function QueueList({ length }: { length: number }) {
 
   const pool = poolSize(v.viewportPx, length);
   v.first = firstRow(v.scrollTop, pool, length);
+  v.stale = false;
   const first = v.anchor + v.first;
   const rows = [];
   for (let slot = 0; slot < pool; slot++) {
     const position = slotPosition(slot, first, pool);
+    const entry = store.entry(position);
+    const artist = entry?.artist;
+    const album = entry?.album;
+    const duration = entry?.duration;
     rows.push(
       <div
         key={slot}
@@ -114,7 +151,15 @@ export function QueueList({ length }: { length: number }) {
         aria-setsize={length}
         aria-posinset={position + 1}
         style={{ transform: `translateY(${(position - v.anchor) * ROW_PX}px)` }}
-      />,
+      >
+        <span class="queue-title">{entry?.title ?? ""}</span>
+        <span class="queue-info">
+          {artist && album ? `${artist} · ${album}` : (artist ?? album ?? "")}
+        </span>
+        <span class="queue-time">
+          {duration == null ? "" : formatTime(duration)}
+        </span>
+      </div>,
     );
   }
   return (

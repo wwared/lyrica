@@ -127,13 +127,50 @@ body {
   position: relative;
 }
 
-/* Height: ROW_PX in virtual.ts. */
+/* Height: ROW_PX in virtual.ts. Every row always holds the same three
+   elements, so filling one only changes text. */
 .queue-row {
   position: absolute;
   top: 0;
   right: 0;
   left: 0;
+  display: grid;
+  grid-template:
+    "title time" 1.25rem
+    "info time" 1.125rem
+    / minmax(0, 1fr) auto;
+  align-content: center;
+  column-gap: 12px;
   height: 56px;
+  padding: 0 20px;
+}
+
+.queue-title,
+.queue-info {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.queue-title {
+  grid-area: title;
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+.queue-info {
+  grid-area: info;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.queue-time {
+  grid-area: time;
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Pinned to the bottom, with fixed-height children, so nothing moves when the

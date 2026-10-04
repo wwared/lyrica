@@ -11,6 +11,7 @@ import { covers, findCover } from "./cover";
 import { Marquee } from "./marquee";
 import { formatTime, position } from "./progress";
 import { QueueList } from "./queue";
+import { queueStore } from "./queue-store";
 import { useStream } from "./stream";
 import { Volume } from "./volume";
 import { useWakeLock } from "./wake";
@@ -19,9 +20,15 @@ import { connect, type Command, type Connection, type Snapshot } from "./ws";
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  // One for the app's lifetime, so it never invalidates the list's memo.
+  const [store] = useState(queueStore);
   const connection = useRef<Connection | null>(null);
   useEffect(() => {
-    const c = connect(setSnapshot, (config) => setStreamUrl(config.stream));
+    const c = connect(
+      setSnapshot,
+      (config) => setStreamUrl(config.stream),
+      store,
+    );
     connection.current = c;
     return () => c.close();
   }, []);
@@ -48,6 +55,7 @@ export function App() {
         : new URL(cover ?? noCover, location.href).href,
   });
   const [mini, setMini] = useState(false);
+  useEffect(() => store.show(mini), [mini]);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const nowPlaying = useRef<HTMLElement>(null);
   const capture = useFlip(nowPlaying, mini);
@@ -55,7 +63,7 @@ export function App() {
   // every other state push.
   const queueLength = snapshot?.queue?.length ?? 0;
   const queueList = useMemo(
-    () => <QueueList length={queueLength} />,
+    () => <QueueList length={queueLength} store={store} />,
     [queueLength],
   );
 

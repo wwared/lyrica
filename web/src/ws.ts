@@ -1,3 +1,5 @@
+import type { Entry, QueueStore } from "./queue-store";
+
 export type PlayState = "play" | "pause" | "stop" | "offline";
 
 /** A `state` message, stamped with its local receive time (`performance.now()`). */
@@ -52,10 +54,14 @@ export type Connection = {
 
 const RETRY_MS = 1000;
 
-/** Keeps a socket to the server open, reconnecting on drops. */
+/**
+ * Keeps a socket to the server open, reconnecting on drops. Queue state and
+ * entries go to `store`, outside `App`'s state.
+ */
 export function connect(
   onSnapshot: (snapshot: Snapshot) => void,
   onConfig: (config: Config) => void,
+  store: QueueStore,
 ): Connection {
   // Relative so it works under a reverse-proxy path prefix.
   const url = new URL("ws", location.href);
@@ -66,12 +72,24 @@ export function connect(
 
   const open = () => {
     socket = new WebSocket(url);
+    socket.onopen = () =>
+      store.opened((window) => {
+        if (socket.readyState === WebSocket.OPEN)
+          socket.send(JSON.stringify(window));
+      });
     socket.onmessage = (event) => {
       const message = parse(event.data, performance.now());
-      if (message && "stream" in message) onConfig(message);
-      else if (message) onSnapshot(message);
+      if (message === undefined) return;
+      if ("stream" in message) onConfig(message);
+      else if ("songs" in message)
+        store.reply(message.version, message.start, message.songs);
+      else {
+        store.state(message.queue);
+        onSnapshot(message);
+      }
     };
     socket.onclose = () => {
+      store.state(null);
       onSnapshot({
         state: "offline",
         title: null,
@@ -93,7 +111,7 @@ export function connect(
 
   const shutdown = () => {
     window.clearTimeout(retry);
-    socket.onmessage = socket.onclose = null;
+    socket.onopen = socket.onmessage = socket.onclose = null;
     socket.close();
   };
 
@@ -120,7 +138,12 @@ export function connect(
   };
 }
 
-function parse(data: unknown, at: number): Snapshot | Config | undefined {
+type Reply = { version: number; start: number; songs: Entry[] | null };
+
+function parse(
+  data: unknown,
+  at: number,
+): Snapshot | Config | Reply | undefined {
   if (typeof data !== "string") return;
   let message;
   try {
@@ -129,6 +152,10 @@ function parse(data: unknown, at: number): Snapshot | Config | undefined {
     return;
   }
   if (message?.type === "config") return { stream: message.stream };
+  if (message?.type === "queue") {
+    const { version, start, songs } = message;
+    return { version, start, songs };
+  }
   if (message?.type !== "state") return;
   const { state, title, artist, album, folder, elapsed, duration, volume } =
     message;
