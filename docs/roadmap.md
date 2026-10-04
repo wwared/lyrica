@@ -45,6 +45,15 @@ A button in the mini-mode toolbar opens the list; there is no general settings m
 2. **Playlists over the WS:** list request and reply; a load command that clears the queue and loads the playlist.
 3. **Playlists button and list:** a toolbar button opens a list of stored playlists; tapping one replaces the queue.
 
+## Deferred phone checks
+
+Checks headless Chromium can't make, to do on an iPhone (home-screen app) before the live queue counts as finished:
+
+- **Album grouping (step 9):** the separator is visible but subtle.
+- **Lazy cover art (step 10):** flinging past big covers (13–14 MB near positions 137,507 and 137,526) doesn't stutter.
+- **Tap to play (step 11):** a tap plays the row; a tap that stops a fling doesn't; no grey tap flash; the scroll indicator stays hidden; the song-change jump and the fade-in's first frame look right.
+- **Covers ahead of the view (step 12):** covers are already showing as rows scroll into view during ordinary drags and flings, and during a hard fling's tail and after it stops; no stutter while they load. If they still pop in after hard flings, raise `AHEAD_ROWS_PER_S` (100 rows/s; headless touch flings peak at 67–105 rows/s, so the iOS speeds are unmeasured).
+
 ## Later (to design)
 
 Ideas to revisit once the phases above are done; how they look and work is open.
