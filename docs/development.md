@@ -73,11 +73,13 @@ Regenerate the icons in `web/public/` after changing `web/icons/lyrica.png` (squ
 cd web
 for s in 512 192; do magick icons/lyrica.png -filter Lanczos -resize ${s}x$s -strip public/icon-$s.png; done
 magick icons/lyrica.png -filter Lanczos -resize 180x180 -strip public/apple-touch-icon.png
-magick icons/lyrica.png -filter Lanczos -resize 32x32 -strip public/favicon.png
+magick icons/lyrica.png -alpha set -filter Lanczos -resize 512x512 \
+  \( -size 512x512 xc:none -fill white -draw "roundrectangle 0,0,511,511,102,102" \) \
+  -compose DstIn -composite -resize 32x32 -strip public/favicon.png
 nix shell nixpkgs#oxipng -c oxipng -o max --strip all public/*.png
 ```
 
-`magick` is `nixpkgs#imagemagick`.
+`magick` is `nixpkgs#imagemagick`. The favicon gets transparent rounded corners (20 % radius, masked at 512 px for smooth edges) so it doesn't sit as a hard square in desktop tabs; the app icons stay square, iOS and Android round them.
 
 ## NixOS module
 
