@@ -4,8 +4,8 @@ pub enum Subsystem {
     Database,
     Update,
     StoredPlaylist,
-    /// The queue.
-    Playlist,
+    /// MPD's `playlist`.
+    Queue,
     Player,
     Mixer,
     Output,
@@ -26,7 +26,7 @@ impl Subsystem {
             Subsystem::Database => "database",
             Subsystem::Update => "update",
             Subsystem::StoredPlaylist => "stored_playlist",
-            Subsystem::Playlist => "playlist",
+            Subsystem::Queue => "playlist",
             Subsystem::Player => "player",
             Subsystem::Mixer => "mixer",
             Subsystem::Output => "output",
@@ -46,7 +46,7 @@ impl Subsystem {
             "database" => Subsystem::Database,
             "update" => Subsystem::Update,
             "stored_playlist" => Subsystem::StoredPlaylist,
-            "playlist" => Subsystem::Playlist,
+            "playlist" => Subsystem::Queue,
             "player" => Subsystem::Player,
             "mixer" => Subsystem::Mixer,
             "output" => Subsystem::Output,

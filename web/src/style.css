@@ -87,7 +87,7 @@ body {
 
 /* Above the now-playing section in both modes, so its geometry never changes
    on a switch; only shown in mini mode. */
-.playlist {
+.queue {
   flex: 1;
   min-height: 0;
   display: grid;
@@ -99,7 +99,7 @@ body {
     visibility 0s var(--switch-ms);
 }
 
-.mini .playlist {
+.mini .queue {
   opacity: 1;
   visibility: visible;
   transition: opacity var(--switch-ms) var(--switch-ease);
@@ -218,7 +218,7 @@ body {
   color: var(--muted);
 }
 
-.playlist p {
+.queue p {
   margin: 0;
 }
 
@@ -576,8 +576,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .playlist,
-  .mini .playlist,
+  .queue,
+  .mini .queue,
   .extras,
   .mini .extras,
   .volume,

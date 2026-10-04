@@ -18,6 +18,7 @@ Mobile-first PWA client for MPD, single user, very large library (~200k-song que
 - Keep docs in `docs/` current when behavior or direction changes.
 - `git add` new files before running nix commands.
 - Before testing in headless Chromium, read "Testing the frontend" in `docs/development.md` and use its exact flags. `--password-store=basic` is mandatory: without it every page hangs blank.
+- Naming: MPD's current playlist is the "queue", in code, UI and docs; "playlist" means a stored playlist only. MPD protocol names (`playlistinfo`, `playlist`, `playlistlength`) stay as they are at the protocol boundary.
 
 ## Writing style
 

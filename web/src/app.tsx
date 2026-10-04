@@ -47,8 +47,8 @@ export function App() {
 
   return (
     <main class={mini ? "app mini" : "app"}>
-      <section class="playlist" aria-hidden={!mini}>
-        <p class="placeholder">Playlist</p>
+      <section class="queue" aria-hidden={!mini}>
+        <p class="placeholder">Queue</p>
       </section>
       <section class="now-playing" ref={nowPlaying}>
         <Art cover={cover} />
@@ -60,7 +60,7 @@ export function App() {
         </h1>
         <button
           class="switch"
-          aria-label={mini ? "Full player" : "Playlist"}
+          aria-label={mini ? "Full player" : "Queue"}
           onClick={() => {
             capture();
             setMini(!mini);
@@ -157,7 +157,7 @@ export function App() {
   );
 }
 
-// Matches --switch-ms / --switch-ease in style.css (playlist fade, chevron).
+// Matches --switch-ms / --switch-ease in style.css (queue fade, chevron).
 const SWITCH_MS = 350;
 const SWITCH_EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
 
