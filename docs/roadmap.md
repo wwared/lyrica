@@ -9,7 +9,8 @@ Now playing is done, including seeking on the bar in full mode. The queue area a
 - **Foundation:** Nix flake (dev shell, build, fmt, check, NixOS module); `lyrica-mpd` with the commands now playing needs; server bridging WebSocket clients to MPD (idle and command connections, reconnect with backoff, offline state); frontend embedded in the binary.
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
 - **Play here:** plays MPD's `httpd` stream in the browser, with title, artist, album and cover on the lock screen.
-- **iOS fit:** fixed viewport (no bounce, no zoom, no selection), full height in home-screen apps, safe areas, light / dark mode.
+- **iOS fit:** fixed viewport (no bounce, no zoom, no selection), full height in home-screen apps, safe areas.
+- **Dark only:** one dark colour scheme, regardless of the system setting.
 - **PWA:** app icon and favicon, screen kept on while visible, portrait on Android.
 
 ## Next phases (in order)
@@ -43,19 +44,13 @@ A dedicated button opens the list; there is no general settings menu.
 2. **Playlists over the WS:** list request and reply; a load command that clears the queue and loads the playlist.
 3. **Playlists button and list:** opens a list of stored playlists; tapping one replaces the queue.
 
-### PWA polish
-
-No service worker or offline shell (caching the app so it launches without a network): it is useless without the server and MPD anyway.
-
-1. **Launch colour:** the manifest's `background_color` is fixed to the dark background; check what iOS shows while launching in light mode and match it.
-
 ### Colour scheme
 
-Every colour is one of four CSS variables per light / dark scheme (background, foreground, muted, bar track), all greys, plus the `theme-color` meta tags and manifest colours, which repeat the backgrounds.
+Every colour is one of four CSS variables (background, foreground, muted, bar track), all greys, plus the `theme-color` meta tag and manifest colours, which repeat the background.
 
-1. **Gruvbox palette:** map the existing variables to gruvbox light and dark.
+1. **Gruvbox palette:** map the existing variables to gruvbox dark.
 2. **Accents:** gruvbox accent colours for highlights (on toggles, progress and volume fill, current queue track); exact use to iterate on.
-3. **Browser colours:** `theme-color` meta tags and manifest follow the palette.
+3. **Browser colours:** `theme-color` meta tag and manifest follow the palette.
 
 ## Later (to design)
 

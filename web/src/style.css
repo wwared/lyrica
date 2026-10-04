@@ -14,11 +14,11 @@
 }
 
 :root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #111111;
-  --muted: #6b6b6b;
-  --track: #e2e2e2;
+  color-scheme: dark;
+  --bg: #111111;
+  --fg: #f2f2f2;
+  --muted: #9a9a9a;
+  --track: #333333;
   font-family:
     "Iosevka Aile",
     system-ui,
@@ -31,15 +31,6 @@
   /* Mode switch; SWITCH_MS / SWITCH_EASE in app.tsx match. */
   --switch-ms: 350ms;
   --switch-ease: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111111;
-    --fg: #f2f2f2;
-    --muted: #9a9a9a;
-    --track: #333333;
-  }
 }
 
 * {
