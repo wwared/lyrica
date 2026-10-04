@@ -1,6 +1,6 @@
 [package]
 name = "lyrica-mpd"
-description = "Async MPD client: protocol parsing and multiplexed connections"
+description = "Async MPD client: one connection per Client, nom protocol parsing"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
