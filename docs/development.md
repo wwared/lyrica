@@ -37,7 +37,15 @@ Headless Chromium (`nix shell nixpkgs#chromium`): **always** start it with exact
 chromium --headless=new --no-sandbox --password-store=basic --use-mock-keychain --remote-debugging-port=9333 --user-data-dir=/tmp/lyrica-chrome
 ```
 
-Drive it over CDP. Useful calls: `Emulation.setDeviceMetricsOverride` (390×844, `mobile: true`) for the iPhone viewport, `Runtime.evaluate` to read the DOM and click, `Page.setWebLifecycleState` (`frozen` then `active`) or `Emulation.setFocusEmulationEnabled` plus dispatching `visibilitychange` to simulate the page being hidden and shown. A Bun or Node WebSocket client is handy for raw protocol checks.
+Drive it over CDP. Useful calls: `Emulation.setDeviceMetricsOverride` (390×844, `mobile: true`) for the iPhone viewport, `Emulation.setTouchEmulationEnabled` plus `Input.dispatchTouchEvent` for swipes and flings, `Runtime.evaluate` to read the DOM and click, `Page.setWebLifecycleState` (`frozen` then `active`) or `Emulation.setFocusEmulationEnabled` plus dispatching `visibilitychange` to simulate the page being hidden and shown. A Bun or Node WebSocket client is handy for raw protocol checks.
+
+Queue checks (`architecture.md` → "Responsiveness"):
+
+- Compare against the previous build: build both (`git stash` the change, build, copy the binary to `/tmp`; unstash, build again) and run them side by side on two ports.
+- Per-frame state after layout, before paint: a `ResizeObserver` on a hidden element whose size a `requestAnimationFrame` loop toggles fires once per frame after layout; sample the visible rows there. Long tasks: a `PerformanceObserver` for `longtask`, added with `Page.addScriptToEvaluateOnNewDocument`.
+- Window traffic: wrap `WebSocket` in the page (same injected script) to count, delay or hold back `queue` replies.
+- Cover bytes: the mirror sends no `Timing-Allow-Origin`, so resource timing reports 0 bytes; count `Network.loadingFinished`'s `encodedDataLength` instead. `Network.clearBrowserCache` before each run.
+- Real queue regions: dispatch a `wheel` event on the list first (pauses auto-centring, so song changes don't move it), then jump by setting `scrollTop`, up to 8,000 rows at a time (the space's half; re-anchoring recentres between jumps). Most of the queue has ~6 folders per 100 rows, almost all with covers; 94,000–98,200 has a folder per row, without covers.
 
 ## Frontend gotchas
 
