@@ -10,7 +10,7 @@ Now playing is done, including seeking on the bar in full mode. The queue area a
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume slider, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
 - **Play here:** plays MPD's `httpd` stream in the browser, with title, artist, album and cover on the lock screen.
 - **iOS fit:** fixed viewport (no bounce, no zoom, no selection), full height in home-screen apps, safe areas.
-- **Dark only:** one dark colour scheme, regardless of the system setting.
+- **Dark only:** gruvbox dark, regardless of the system setting.
 - **PWA:** app icon and favicon, screen kept on while visible, portrait on Android.
 
 ## Next phases (in order)
@@ -46,11 +46,9 @@ A dedicated button opens the list; there is no general settings menu.
 
 ### Colour scheme
 
-Every colour is one of four CSS variables (background, foreground, muted, bar track), all greys, plus the `theme-color` meta tag and manifest colours, which repeat the background.
+Every colour is one of four CSS variables (background, foreground, muted, bar track), mapped to gruvbox dark, plus the `theme-color` meta tag and manifest colours, which repeat the background.
 
-1. **Gruvbox palette:** map the existing variables to gruvbox dark.
-2. **Accents:** gruvbox accent colours for highlights (on toggles, progress and volume fill, current queue track); exact use to iterate on.
-3. **Browser colours:** `theme-color` meta tag and manifest follow the palette.
+1. **Accents:** gruvbox accent colours for highlights (on toggles, progress and volume fill, current queue track); exact use to iterate on.
 
 ## Later (to design)
 

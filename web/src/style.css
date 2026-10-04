@@ -15,10 +15,11 @@
 
 :root {
   color-scheme: dark;
-  --bg: #111111;
-  --fg: #f2f2f2;
-  --muted: #9a9a9a;
-  --track: #333333;
+  /* Gruvbox dark: bg0, fg1, fg4, bg2. */
+  --bg: #282828;
+  --fg: #ebdbb2;
+  --muted: #a89984;
+  --track: #504945;
   font-family:
     "Iosevka Aile",
     system-ui,
