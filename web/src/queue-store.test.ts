@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  BLOCK,
   queueStore,
   RETRY_MS,
   type Entry,
@@ -20,7 +21,7 @@ const songs = (start: number, end: number): Entry[] =>
     folder: null,
   }));
 
-/** A shown store at version 1; `sent` collects requested block starts. */
+/** A shown store at version 1; `sent` collects requests, `starts` their blocks' starts. */
 function setup(length = LONG) {
   let visible = true;
   const store = queueStore(() => visible);
@@ -28,7 +29,8 @@ function setup(length = LONG) {
   store.opened((window) => sent.push(window));
   store.state({ version: 1, length, position: null, id: null });
   store.show(true);
-  const starts = () => sent.splice(0).map((w) => w.start);
+  const starts = () =>
+    sent.splice(0).map((w) => Math.ceil(w.start / BLOCK) * BLOCK);
   const answer = (w: Window, version = w.version) =>
     store.reply(version, w.start, songs(w.start, w.end));
   return { store, sent, starts, answer, hide: () => (visible = false) };
@@ -51,7 +53,7 @@ describe("planning", () => {
     // One viewport (100 rows) beyond reaches blocks 10 and 13, 50 rows away each.
     store.view(1150, 1250);
     const [a, b] = sent.splice(0);
-    expect([a!.start, b!.start]).toEqual([1100, 1200]);
+    expect([a!.start, b!.start]).toEqual([1099, 1199]);
     answer(a!);
     expect(starts()).toEqual([1300]);
     answer(b!);
@@ -62,26 +64,26 @@ describe("planning", () => {
   });
 
   test("nearer above goes first", () => {
-    const { store, sent } = setup();
+    const { store, starts } = setup();
     store.view(1150, 1240);
     store.reply(1, 1100, []);
     store.reply(1, 1200, []);
-    expect(sent.map((w) => w.start)).toEqual([1100, 1200, 1000, 1300]);
+    expect(starts()).toEqual([1100, 1200, 1000, 1300]);
   });
 
-  test("clamped to the queue, the last block shorter", () => {
+  test("clamped to the queue, the last block shorter, each with the entry before it", () => {
     const { store, sent } = setup(1234);
     store.view(1200, 1234);
-    store.reply(1, 1200, []);
-    store.reply(1, 1100, []);
+    store.reply(1, 1199, []);
+    store.reply(1, 1099, []);
     expect(sent).toEqual([
-      { type: "queue", version: 1, start: 1200, end: 1234 },
-      { type: "queue", version: 1, start: 1100, end: 1200 },
+      { type: "queue", version: 1, start: 1199, end: 1234 },
+      { type: "queue", version: 1, start: 1099, end: 1200 },
     ]);
     const top = setup(1234);
     top.store.view(0, 10);
     top.store.reply(1, 0, []);
-    expect(top.sent.map((w) => w.start)).toEqual([0]);
+    expect(top.sent.map((w) => [w.start, w.end])).toEqual([[0, 100]]);
   });
 
   test("a freed slot goes to what is nearest now, not to a backlog", () => {
@@ -164,12 +166,12 @@ describe("replies", () => {
     answer(b!);
     expect(store.entry(1200)).toBeUndefined();
     expect(sent).toEqual([
-      { type: "queue", version: 2, start: 1100, end: 1200 },
+      { type: "queue", version: 2, start: 1099, end: 1200 },
     ]);
     answer(c!);
     expect(sent.map((w) => [w.version, w.start])).toEqual([
-      [2, 1100],
-      [2, 1200],
+      [2, 1099],
+      [2, 1199],
     ]);
   });
 
@@ -222,7 +224,7 @@ describe("new version", () => {
     expect(store.entry(1300)).toBeUndefined();
     expect(announced).toEqual([[0, Infinity]]);
     const [a, b] = sent.splice(0);
-    expect([a!.version, a!.start, b!.start]).toEqual([2, 1100, 1200]);
+    expect([a!.version, a!.start, b!.start]).toEqual([2, 1099, 1199]);
     store.reply(2, 1100, songs(0, 100));
     expect(store.entry(1100)?.title).toBe("t0");
     expect(store.entry(1200)?.title).toBe("t1200");
@@ -256,9 +258,9 @@ describe("new version", () => {
     store.reply(2, 1100, songs(0, 100));
     expect(store.entry(1150)?.title).toBe("t1150");
     expect(sent.map((w) => [w.version, w.start])).toEqual([
-      [2, 1100],
-      [2, 1200],
-      [3, 1100],
+      [2, 1099],
+      [2, 1199],
+      [3, 1099],
     ]);
     store.reply(3, 1100, songs(0, 100));
     expect(store.entry(1150)?.title).toBe("t50");
@@ -272,7 +274,7 @@ describe("new version", () => {
     expect(sent[1]).toEqual({
       type: "queue",
       version: 2,
-      start: 1200,
+      start: 1199,
       end: 1210,
     });
   });
@@ -284,6 +286,116 @@ describe("new version", () => {
     expect(store.entry(1150)?.title).toBe("t1150");
     store.view(2300, 2310);
     expect(store.entry(1150)).toBeUndefined();
+  });
+});
+
+describe("album groups", () => {
+  /** Entries `start` to `end - 1` with `album(position)`, all in folder `f`. */
+  const grouped = (
+    start: number,
+    end: number,
+    album: (position: number) => string | null,
+  ) =>
+    songs(start, end).map((song, i) => ({
+      ...song,
+      album: album(start + i),
+      folder: "f",
+    }));
+
+  test("a block's first row is decided by its leading entry, never served", () => {
+    const { store, sent } = setup();
+    store.view(1150, 1160);
+    expect(sent[0]).toEqual({
+      type: "queue",
+      version: 1,
+      start: 1099,
+      end: 1200,
+    });
+    // Groups of ten from 1095: 1100 is inside one.
+    const tens = (p: number) => `a${Math.floor((p + 5) / 10)}`;
+    store.reply(1, 1099, grouped(1099, 1200, tens));
+    expect(store.entry(1099)).toBeUndefined();
+    expect(store.starts(1099)).toBeUndefined();
+    expect([1100, 1104, 1105, 1106, 1199].map(store.starts)).toEqual([
+      false,
+      false,
+      true,
+      false,
+      false,
+    ]);
+    store.view(1250, 1260);
+    store.reply(
+      1,
+      1199,
+      grouped(1199, 1300, (p) => (p < 1200 ? "b" : "c")),
+    );
+    expect(store.starts(1200)).toBe(true);
+  });
+
+  test("position 0 starts one", () => {
+    const { store, sent } = setup();
+    store.view(0, 10);
+    store.reply(
+      1,
+      sent[0]!.start,
+      grouped(0, 100, () => "a"),
+    );
+    expect([0, 1].map(store.starts)).toEqual([true, false]);
+  });
+
+  test("a null album is a group by itself; another folder starts a new one", () => {
+    const { store } = setup();
+    store.view(0, 10);
+    const albums = ["a", "a", null, null, "a", "a", "a"];
+    const entries = grouped(0, 7, (p) => albums[p]!);
+    entries[6]!.folder = "g";
+    store.reply(1, 0, entries);
+    expect([1, 2, 3, 4, 5, 6].map(store.starts)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+    ]);
+  });
+
+  test("undefined while not loaded or past the length", () => {
+    const { store, sent } = setup(150);
+    store.view(100, 150);
+    expect(store.starts(120)).toBeUndefined();
+    store.reply(
+      1,
+      sent[0]!.start,
+      grouped(99, 150, () => "a"),
+    );
+    expect(store.starts(149)).toBe(false);
+    expect(store.starts(150)).toBeUndefined();
+  });
+
+  test("after a new version, each block keeps its own leading entry", () => {
+    const { store, sent } = setup();
+    store.view(1150, 1250);
+    for (let i = 0; i < 4; i++) {
+      const w = sent.shift()!;
+      store.reply(
+        1,
+        w.start,
+        grouped(w.start, w.end, () => "a"),
+      );
+    }
+    expect(store.starts(1200)).toBe(false);
+    store.state({ version: 2, length: LONG, position: null, id: null });
+    expect(sent.map((w) => w.start)).toEqual([1099, 1199]);
+    store.reply(
+      2,
+      1199,
+      grouped(1199, 1300, (p) => (p < 1200 ? "b" : "a")),
+    );
+    // Block 11 is still version 1, its last entry in album "a".
+    expect(store.entry(1199)?.album).toBe("a");
+    expect(store.starts(1200)).toBe(true);
+    expect(store.starts(1150)).toBe(false);
   });
 });
 
@@ -328,7 +440,7 @@ describe("connection", () => {
     const sent: Window[] = [];
     store.opened((window) => sent.push(window));
     store.state({ version: 1, length: LONG, position: null, id: null });
-    expect(sent.map((w) => w.start)).toEqual([1100]);
+    expect(sent.map((w) => w.start)).toEqual([1099]);
   });
 
   test("a reopened socket frees the slots and keeps the blocks", () => {
@@ -340,6 +452,6 @@ describe("connection", () => {
     store.opened((window) => sent.push(window));
     store.state({ version: 1, length: LONG, position: null, id: null });
     expect(store.entry(1100)?.title).toBe("t1100");
-    expect(sent.map((w) => w.start)).toEqual([1200, 1300]);
+    expect(sent.map((w) => w.start)).toEqual([1199, 1299]);
   });
 });

@@ -209,19 +209,19 @@ export function QueueList({
     const artist = entry?.artist;
     const album = entry?.album;
     const duration = entry?.duration;
+    let className = "queue-row";
+    if (currentId !== null && entry?.id === currentId) className += " current";
+    if (position > 0 && store.starts(position)) className += " group";
     rows.push(
       <div
         key={slot}
-        class={
-          currentId !== null && entry?.id === currentId
-            ? "queue-row current"
-            : "queue-row"
-        }
+        class={className}
         role="listitem"
         aria-setsize={length}
         aria-posinset={position + 1}
         style={{ transform: `translateY(${(position - v.anchor) * ROW_PX}px)` }}
       >
+        <span class="queue-track">{entry?.track ?? ""}</span>
         <span class="queue-title">{entry?.title ?? ""}</span>
         <span class="queue-info">
           {artist && album ? `${artist} · ${album}` : (artist ?? album ?? "")}

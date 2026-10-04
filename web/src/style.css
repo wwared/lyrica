@@ -131,7 +131,7 @@ body {
   position: relative;
 }
 
-/* Height: ROW_PX in virtual.ts. Every row always holds the same three
+/* Height: ROW_PX in virtual.ts. Every row always holds the same four
    elements, so filling one only changes text. */
 .queue-row {
   position: absolute;
@@ -140,13 +140,35 @@ body {
   left: 0;
   display: grid;
   grid-template:
-    "title time" 1.25rem
-    "info time" 1.125rem
-    / minmax(0, 1fr) auto;
+    "track title time" 1.25rem
+    "track info time" 1.125rem
+    / 1.5rem minmax(0, 1fr) auto;
   align-content: center;
   column-gap: 12px;
   height: 56px;
   padding: 0 20px;
+}
+
+/* Drawn over the row, so a group start moves nothing. */
+.queue-row.group::before {
+  position: absolute;
+  top: 0;
+  right: 20px;
+  left: 20px;
+  height: 1px;
+  background: var(--track);
+  content: "";
+}
+
+/* Four digits overflow left, into the padding, instead of into the title. */
+.queue-track {
+  grid-area: track;
+  align-self: center;
+  justify-self: end;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .queue-title,
