@@ -15,7 +15,18 @@ export type Snapshot = {
   random: boolean;
   repeat: boolean;
   single: boolean;
+  /** `null` while offline. */
+  queue: Queue | null;
   at: number;
+};
+
+/** Queue state; entries travel in their own messages. */
+export type Queue = {
+  version: number;
+  length: number;
+  /** Current song's position and id; `null` when there is none. */
+  position: number | null;
+  id: number | null;
 };
 
 /** Sent first on every connection. */
@@ -73,6 +84,7 @@ export function connect(
         random: false,
         repeat: false,
         single: false,
+        queue: null,
         at: performance.now(),
       });
       retry = window.setTimeout(open, RETRY_MS);
@@ -120,7 +132,7 @@ function parse(data: unknown, at: number): Snapshot | Config | undefined {
   if (message?.type !== "state") return;
   const { state, title, artist, album, folder, elapsed, duration, volume } =
     message;
-  const { random, repeat, single } = message;
+  const { random, repeat, single, queue } = message;
   return {
     state,
     title,
@@ -133,6 +145,7 @@ function parse(data: unknown, at: number): Snapshot | Config | undefined {
     random,
     repeat,
     single,
+    queue,
     at,
   };
 }

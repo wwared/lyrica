@@ -14,6 +14,7 @@ const snapshot = (overrides: Partial<Snapshot>): Snapshot => ({
   random: false,
   repeat: false,
   single: false,
+  queue: null,
   at: 1000,
   ...overrides,
 });

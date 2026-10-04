@@ -72,9 +72,21 @@ pub struct Snapshot {
     pub repeat: bool,
     /// Also on for MPD's `oneshot`.
     pub single: bool,
+    /// `None` while offline.
+    pub queue: Option<Queue>,
     /// When `elapsed` was read, so clients that subscribe later still get
     /// the current position.
     pub at: Instant,
+}
+
+/// Queue state from `status`; entries travel in their own messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Queue {
+    pub version: u32,
+    pub length: u32,
+    /// Current song's position and id; `None` when there is none.
+    pub position: Option<u32>,
+    pub id: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -92,6 +104,7 @@ enum ServerMessage<'a> {
         random: bool,
         repeat: bool,
         single: bool,
+        queue: Option<Queue>,
     },
 }
 
@@ -109,6 +122,7 @@ impl Snapshot {
             random: false,
             repeat: false,
             single: false,
+            queue: None,
             at: Instant::now(),
         }
     }
@@ -134,6 +148,7 @@ impl Snapshot {
             random: self.random,
             repeat: self.repeat,
             single: self.single,
+            queue: self.queue,
         };
         serde_json::to_string(&message).expect("state message serializes")
     }
@@ -200,7 +215,12 @@ async fn watch_player(
     loop {
         snapshots.send_replace(fetch(&mut client, music_url).await?);
         client
-            .idle(&[Subsystem::Player, Subsystem::Options, Subsystem::Mixer])
+            .idle(&[
+                Subsystem::Player,
+                Subsystem::Options,
+                Subsystem::Mixer,
+                Subsystem::Queue,
+            ])
             .await?;
     }
 }
@@ -227,6 +247,12 @@ async fn fetch(client: &mut Client, music_url: Option<&str>) -> Result<Snapshot>
         random: status.random,
         repeat: status.repeat,
         single: status.single != Single::Off,
+        queue: Some(Queue {
+            version: status.queue_version,
+            length: status.queue_length,
+            position: status.song,
+            id: status.song_id,
+        }),
         at,
     })
 }
@@ -388,6 +414,12 @@ mod tests {
             random: true,
             repeat: false,
             single: true,
+            queue: Some(Queue {
+                version: 7,
+                length: 300,
+                position: Some(12),
+                id: Some(40),
+            }),
             at,
         };
         let later = at + Duration::from_secs(5);
@@ -397,6 +429,7 @@ mod tests {
                 "type": "state", "state": "play", "title": "t", "artist": "a", "album": "al",
                 "folder": "https://m/a/", "elapsed": 15.0, "duration": 30.0, "volume": 70,
                 "random": true, "repeat": false, "single": true,
+                "queue": {"version": 7, "length": 300, "position": 12, "id": 40},
             })
         );
         assert_eq!(
@@ -485,10 +518,66 @@ mod tests {
     }
 
     async fn expect(stream: &mut BufReader<tokio::net::TcpStream>, request: &str) {
+        reply(stream, request, "").await;
+    }
+
+    /// Reads `request`, then sends `response` and `OK`.
+    async fn reply(stream: &mut BufReader<tokio::net::TcpStream>, request: &str, response: &str) {
         let mut line = String::new();
         stream.read_line(&mut line).await.unwrap();
         assert_eq!(line, request);
-        stream.write_all(b"OK\n").await.unwrap();
+        stream
+            .write_all(format!("{response}OK\n").as_bytes())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn queue_change_pushes_state() {
+        const IDLE: &str = "idle \"player\" \"options\" \"mixer\" \"playlist\"\n";
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mpd = Mpd {
+            addr: listener.local_addr().unwrap().to_string(),
+            password: None,
+        };
+        let (changed_tx, changed) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let mut s = accept(&listener).await;
+            let status = "state: play\nplaylist: 2\nplaylistlength: 3\nsong: 1\nsongid: 5\n";
+            reply(&mut s, "status\n", status).await;
+            reply(&mut s, "currentsong\n", "file: a.flac\n").await;
+            changed.await.unwrap();
+            reply(&mut s, IDLE, "changed: playlist\n").await;
+            let status = "state: stop\nplaylist: 3\nplaylistlength: 0\n";
+            reply(&mut s, "status\n", status).await;
+            reply(&mut s, "currentsong\n", "").await;
+            let mut line = String::new();
+            s.read_line(&mut line).await.unwrap();
+            assert_eq!(line, IDLE);
+        });
+        let client = mpd.connect().await.unwrap();
+        let (tx, mut rx) = watch::channel(Snapshot::offline());
+        let watcher = tokio::spawn(async move { watch_player(client, None, &tx).await });
+        rx.changed().await.unwrap();
+        let queue = |rx: &mut watch::Receiver<Snapshot>| rx.borrow_and_update().queue;
+        let playing = Queue {
+            version: 2,
+            length: 3,
+            position: Some(1),
+            id: Some(5),
+        };
+        assert_eq!(queue(&mut rx), Some(playing));
+        changed_tx.send(()).unwrap();
+        rx.changed().await.unwrap();
+        let cleared = Queue {
+            version: 3,
+            length: 0,
+            position: None,
+            id: None,
+        };
+        assert_eq!(queue(&mut rx), Some(cleared));
+        server.await.unwrap();
+        watcher.abort();
     }
 
     #[tokio::test]
