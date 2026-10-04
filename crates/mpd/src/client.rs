@@ -146,6 +146,26 @@ impl Client {
         self.run("seekcur", &[&seconds]).await.map(drop)
     }
 
+    /// Stored playlist names, in MPD's order.
+    pub async fn playlists(&mut self) -> Result<Vec<String>> {
+        let names = self
+            .run("listplaylists", &[])
+            .await?
+            .filter(|(key, _)| *key == "playlist")
+            .map(|(_, name)| name.to_owned())
+            .collect();
+        Ok(names)
+    }
+
+    /// Replaces the queue with stored playlist `name` in one command list,
+    /// so other clients see a single change. Not a transaction: if `load`
+    /// fails (`ACK` index 1), the queue stays cleared.
+    pub async fn replace_queue(&mut self, name: &str) -> Result<()> {
+        self.run_list(&[("clear", &[]), ("load", &[name])])
+            .await
+            .map(drop)
+    }
+
     /// Waits until one of `subsystems` (all if empty) changes. Blocks the
     /// connection meanwhile, so idle on a dedicated client.
     pub async fn idle(&mut self, subsystems: &[Subsystem]) -> Result<Vec<Subsystem>> {
@@ -165,10 +185,31 @@ impl Client {
         command: &str,
         args: &[&str],
     ) -> Result<impl Iterator<Item = (&str, &str)>> {
+        self.request.clear();
+        encode(&mut self.request, command, args)?;
+        self.send().await
+    }
+
+    /// Sends `commands` as one command list: one response, `OK` or the first
+    /// failing command's `ACK`.
+    async fn run_list(
+        &mut self,
+        commands: &[(&str, &[&str])],
+    ) -> Result<impl Iterator<Item = (&str, &str)>> {
+        self.request.clear();
+        self.request.push_str("command_list_begin\n");
+        for (command, args) in commands {
+            encode(&mut self.request, command, args)?;
+        }
+        self.request.push_str("command_list_end\n");
+        self.send().await
+    }
+
+    /// Writes `request` and reads the response pairs.
+    async fn send(&mut self) -> Result<impl Iterator<Item = (&str, &str)>> {
         if self.broken {
             return Err(Error::Broken);
         }
-        encode(&mut self.request, command, args)?;
         self.response.clear();
         self.broken = true;
         self.stream
@@ -227,8 +268,8 @@ async fn read_line(stream: &mut BufReader<QuickAck>, buf: &mut String) -> Result
     Ok(())
 }
 
+/// Appends one command line to `out`.
 fn encode(out: &mut String, command: &str, args: &[&str]) -> Result<()> {
-    out.clear();
     out.push_str(command);
     for arg in args {
         if arg.contains('\n') {
@@ -405,6 +446,69 @@ mod tests {
         let idle = tokio::time::timeout(Duration::from_millis(50), client.idle(&[])).await;
         assert!(idle.is_err());
         assert!(matches!(client.ping().await, Err(Error::Broken)));
+        drop(client);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn playlists() {
+        let (addr, server) = fake(&[
+            (
+                "listplaylists\n",
+                "playlist: b\nLast-Modified: 2024-01-01T00:00:00Z\nplaylist: a: \"x\" \\\nLast-Modified: 2024-01-02T00:00:00Z\nOK\n",
+            ),
+            ("listplaylists\n", "OK\n"),
+        ])
+        .await;
+        let mut client = Client::connect(addr).await.unwrap();
+        assert_eq!(client.playlists().await.unwrap(), ["b", "a: \"x\" \\"]);
+        assert!(client.playlists().await.unwrap().is_empty());
+        drop(client);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn replace_queue() {
+        let (addr, server) = fake(&[
+            ("command_list_begin\n", ""),
+            ("clear\n", ""),
+            ("load \"a \\\"b\\\" \\\\c\"\n", ""),
+            ("command_list_end\n", "OK\n"),
+            ("command_list_begin\n", ""),
+            ("clear\n", ""),
+            ("load \"gone\"\n", ""),
+            ("command_list_end\n", "ACK [50@1] {load} No such playlist\n"),
+            ("ping\n", "OK\n"),
+        ])
+        .await;
+        let mut client = Client::connect(addr).await.unwrap();
+        client.replace_queue("a \"b\" \\c").await.unwrap();
+        match client.replace_queue("gone").await {
+            Err(Error::Ack(ack)) => assert_eq!(
+                ack,
+                Ack {
+                    code: 50,
+                    index: 1,
+                    command: "load".into(),
+                    message: "No such playlist".into(),
+                }
+            ),
+            other => panic!("{other:?}"),
+        }
+        client.ping().await.unwrap();
+        drop(client);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn replace_queue_rejects_newline_unsent() {
+        let (addr, server) = fake(&[("ping\n", "OK\n")]).await;
+        let mut client = Client::connect(addr).await.unwrap();
+        assert!(matches!(
+            client.replace_queue("a\nclear").await,
+            Err(Error::InvalidArgument)
+        ));
+        client.ping().await.unwrap();
         drop(client);
         server.await.unwrap();
     }

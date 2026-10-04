@@ -24,6 +24,7 @@ A second MPD with its own library, database and queue under `/tmp`, so its queue
 - `/tmp/lyrica-mpd/mpd.conf`: `music_directory`, `playlist_directory` and `db_file` under `/tmp/lyrica-mpd`, `bind_to_address "127.0.0.1"`, `port "6602"`, an `audio_output` of `type "null"`, `max_playlist_length "200000"` (the default caps the queue at 16,384).
 - `mpd --no-daemon --stderr /tmp/lyrica-mpd/mpd.conf` builds the database on start.
 - A 175,000-entry queue: one command list of 875 `add ""` (each adds the whole library), sent over TCP in one write; returns in ~50 ms. Then `mpc -p 6602 …` for changes, and lyrica with `--mpd 127.0.0.1:6602`. Tracks last 1 s: pause, or `repeat` + `single`, to keep the current song. Deleting most of the queue (`delete 87003:`) blocks MPD for ~9 s; `clear` doesn't.
+- Stored playlists: `.m3u` files of library-relative paths (lines may repeat) in `playlist_directory`, listed and loaded without a restart. Loading is fast in this small library (195,000 lines in ~0.1 s); MPD's per-song lookup slows with directory width, so to mimic the real MPD's multi-second loads, hard-link one file into 4,000 sibling directories (`music/wide/d0001/01.opus` …; delete `db` and restart to rescan) and point the playlist at them (195,000 lines: 2.7 s).
 
 To test connection loss, run lyrica against a proxy and kill it, never MPD itself: `nix shell nixpkgs#socat -c socat TCP-LISTEN:6601,fork,reuseaddr TCP:127.0.0.1:6600`, start lyrica with `--mpd 127.0.0.1:6601`, then `pkill -f TCP-LISTEN:6601` (kills the forked per-connection children too).
 
