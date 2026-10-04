@@ -117,7 +117,9 @@ body {
    No `touch-action` here; the root's `pan-x pan-y` already allows panning.
    `overflow-anchor: none`: Chrome's scroll anchoring would fight re-anchoring.
    No scrollbar: it spans the bounded scroll space, not the queue, so dragging
-   it lands on arbitrary positions and re-anchors under the pointer. */
+   it lands on arbitrary positions and re-anchors under the pointer.
+   No tap highlight: iOS would flash the whole list, the click listener's
+   element, on every tap. */
 .queue-list {
   flex: 1;
   min-height: 0;
@@ -125,6 +127,7 @@ body {
   overscroll-behavior: contain;
   overflow-anchor: none;
   scrollbar-width: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .queue-space {

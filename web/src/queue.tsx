@@ -13,6 +13,7 @@ import {
   slotPosition,
   spaceRows,
 } from "./virtual";
+import type { Command } from "./ws";
 
 // Setting `scrollTop` cancels momentum scrolling (iOS), so the anchor only
 // moves once scrolling has stopped this long with no touch held.
@@ -24,13 +25,17 @@ const RESUME_MS = 15_000;
  * The queue's virtual list (architecture.md → "Live queue"). Scroll state
  * lives in a ref, not in Preact state: the scroll handler re-renders only when
  * the first rendered row changes, or when entries arrived for rendered rows.
+ * Tapping a row plays it.
  */
 export function QueueList({
   length,
   store,
+  send,
 }: {
   length: number;
   store: QueueStore;
+  /** Stable for the list's lifetime. */
+  send: (command: Command) => void;
 }) {
   const list = useRef<HTMLDivElement>(null);
   const [, render] = useReducer((n: number) => n + 1, 0);
@@ -197,6 +202,20 @@ export function QueueList({
       unsettle();
       if (paused) wait();
     };
+    // No `click` follows a touch that scrolled or stopped a fling. The tap
+    // ends the pause its `touchstart` began, so the song change centres.
+    const onClick = (e: MouseEvent) => {
+      const row = (e.target as Element).closest(".queue-row");
+      const entry = row && store.entry(Number(row.ariaPosInSet) - 1);
+      if (!entry || entry.id === null) return;
+      paused = false;
+      clearTimeout(resume);
+      // `playid` would restart the current song.
+      if (entry.id !== store.current.id)
+        return send({ type: "playid", id: entry.id });
+      centred();
+      render(0);
+    };
     // Middle-click autoscroll.
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === "mouse") pause();
@@ -215,6 +234,7 @@ export function QueueList({
     el.addEventListener("wheel", pause, passive);
     el.addEventListener("pointerdown", onPointerDown, passive);
     el.addEventListener("keydown", pause, passive);
+    el.addEventListener("click", onClick);
     return () => {
       disposed = true;
       unsubscribe();
@@ -229,6 +249,7 @@ export function QueueList({
       el.removeEventListener("wheel", pause);
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("keydown", pause);
+      el.removeEventListener("click", onClick);
     };
   }, []);
 

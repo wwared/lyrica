@@ -191,7 +191,7 @@ impl Snapshot {
 
 /// Client → server message. `random`, `repeat` and `single` toggle the mode;
 /// `volume` sets MPD's volume; `seek` jumps to `position` seconds in the
-/// current song.
+/// current song; `playid` plays the queue entry with that id.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Command {
@@ -207,6 +207,9 @@ pub enum Command {
     Seek {
         #[serde(deserialize_with = "seconds")]
         position: Duration,
+    },
+    PlayId {
+        id: u32,
     },
 }
 
@@ -468,6 +471,7 @@ enum Action {
     Single(Single),
     Volume(u8),
     Seek(Duration),
+    PlayId(u32),
 }
 
 impl Action {
@@ -487,6 +491,7 @@ impl Action {
             (Command::Single, _) => Action::Single(Single::On),
             (Command::Volume { volume }, _) => Action::Volume(volume),
             (Command::Seek { position }, _) => Action::Seek(position),
+            (Command::PlayId { id }, _) => Action::PlayId(id),
         })
     }
 
@@ -501,6 +506,7 @@ impl Action {
             Action::Single(mode) => client.single(mode).await,
             Action::Volume(volume) => client.set_volume(volume).await,
             Action::Seek(position) => client.seek_current(position).await,
+            Action::PlayId(id) => client.play_id(id).await,
         }
     }
 }
@@ -614,6 +620,20 @@ mod tests {
         );
         assert!(parse(r#"{"type":"seek","position":-1}"#).is_err());
         assert!(parse(r#"{"type":"seek","position":1e300}"#).is_err());
+    }
+
+    #[test]
+    fn playid_takes_an_entry_id() {
+        let parse = |json| serde_json::from_str::<Command>(json).map(|c| format!("{c:?}"));
+        assert_eq!(
+            parse(r#"{"type":"playid","id":5}"#).unwrap(),
+            "PlayId { id: 5 }"
+        );
+        assert!(parse(r#"{"type":"playid","id":-1}"#).is_err());
+        assert!(parse(r#"{"type":"playid","id":1.5}"#).is_err());
+        assert!(parse(r#"{"type":"playid"}"#).is_err());
+        let offline = Snapshot::offline();
+        assert!(Action::new(Command::PlayId { id: 5 }, &offline).is_none());
     }
 
     #[test]

@@ -34,7 +34,10 @@ export function App() {
   }, []);
   useWakeLock();
 
-  const send = (command: Command) => connection.current?.send(command);
+  // Stable, so passing it never invalidates the list's memo.
+  const [send] = useState(
+    () => (command: Command) => connection.current?.send(command),
+  );
   const offline = snapshot?.state === "offline";
   const disabled = snapshot === null || offline;
   const heading =
@@ -64,7 +67,7 @@ export function App() {
   // every other state push.
   const queueLength = snapshot?.queue?.length ?? 0;
   const queueList = useMemo(
-    () => <QueueList length={queueLength} store={store} />,
+    () => <QueueList length={queueLength} store={store} send={send} />,
     [queueLength],
   );
 
