@@ -20,11 +20,16 @@ Now playing and the live queue are done and checked on an iPhone. There are no s
 
 ## Next phase: stored playlists
 
-A button in the mini-mode toolbar opens the list; there is no general settings menu. Listings go over the queue connection. Loading replaces the queue in one version change, so the list's auto-update shows the new queue without an empty step (`architecture.md` → "Auto-update"). Every step keeps the responsiveness checks (`architecture.md` → "Responsiveness").
+A load button at the left of the mini-mode toolbar opens a modal list of the server's stored playlists; selecting one and tapping "Load" replaces the queue with it (`architecture.md` → "Stored playlists"). No general settings menu. Loading never touches the real MPD's queue during development: throwaway MPD or scripted fake (`development.md`). Every step keeps the responsiveness checks (`architecture.md` → "Responsiveness").
 
-1. **Playlist protocol in `lyrica-mpd`:** `listplaylists`, `clear`, `load`, and command lists, so `clear` and `load` run as one.
-2. **Playlists over the WS:** list request and reply; a load command that clears the queue and loads the playlist.
-3. **Playlists button and list:** a toolbar button opens a list of stored playlists; tapping one replaces the queue.
+1. **Playlist protocol in `lyrica-mpd`:**
+   - `Client::playlists() -> Result<Vec<String>>`: `listplaylists`, the `playlist` values in MPD's order (`Last-Modified` ignored).
+   - `Client::replace_queue(name: &str) -> Result<()>`: `command_list_begin`, `clear`, `load "name"`, `command_list_end`, sent in one write, read as one response (one `OK`, or the failing command's `ACK`, whose index says which). Command lists go through a private encoder taking `&[(&str, &[&str])]`, reusing `encode`'s quoting and newline check; `run` reads the response as now. No public generic command-list API.
+   - Tests (fake server in `client.rs`): both commands' exact bytes and results; a name with quotes and a backslash; an empty listing; `ACK [50@1] {load} No such playlist` → `Error::Ack` with index 1, connection still usable (`ping` after); a newline in the name → `InvalidArgument`, nothing sent.
+   - Throwaway MPD (`development.md`), with `.m3u` files of 1,000, 19,000 and 195,000 lines written into its `playlist_directory`: `replace_queue` time per size; whether a second connection's `status` waits during the load; what an `idle playlist` client sees (events, and `status` right after: no length 0 between the old and new queue). Real MPD: `listplaylists` only.
+   - Docs: `architecture.md` → `lyrica-mpd` command list, "Not implemented" line, measurements under "Queue measurements".
+2. **Playlists over the WS:** the idle task also waits on `stored_playlist`, fetching `listplaylists` on each connect and event into its own `watch` of sorted names (empty while offline); the WS sends `{"type":"playlists","names":[…]}` after `config` and on every change. `{"type":"load","name"}` runs `replace_queue` on the command connection and answers that client alone with `{"type":"loaded","name","error":string|null}` (offline: an error at once). Rust tests: message parsing, names on connect and on change (fake MPD event), the reply on success, `ACK` and offline. Smoke: a Bun WS client against the throwaway MPD.
+3. **Load button and modal:** the toolbar button (disabled while there are no names or offline), the `<dialog>` with its list, selection, Load, close by X, backdrop or Escape, the busy and error states, the list jumping to the top after a load. Headless Chromium against the throwaway MPD (layout at 390 and 375 px, every close path, a load of each size with now playing and the list during it, the responsiveness checks); then by hand on the phones.
 
 ## Later (to design)
 
