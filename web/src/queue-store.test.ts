@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { queueStore, RETRY_MS, type Entry, type Window } from "./queue-store";
+import {
+  queueStore,
+  RETRY_MS,
+  type Entry,
+  type Listener,
+  type Window,
+} from "./queue-store";
 
 const LONG = 175_872;
 
@@ -30,6 +36,13 @@ function setup(length = LONG) {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+const listen = (overrides: Partial<Listener>): Listener => ({
+  stored() {},
+  current() {},
+  opening() {},
+  ...overrides,
 });
 
 describe("planning", () => {
@@ -103,7 +116,9 @@ describe("replies", () => {
   test("stored and announced for the current version", () => {
     const { store, sent, answer } = setup();
     const announced: [number, number][] = [];
-    store.subscribe((start, end) => announced.push([start, end]));
+    store.subscribe(
+      listen({ stored: (start, end) => announced.push([start, end]) }),
+    );
     store.view(1150, 1160);
     answer(sent[0]!);
     expect(store.entry(1100)?.title).toBe("t1100");
@@ -144,7 +159,9 @@ describe("replies", () => {
     const [a, b] = sent.splice(0);
     answer(a!);
     const [c] = sent.splice(0);
-    store.subscribe((start, end) => announced.push([start, end]));
+    store.subscribe(
+      listen({ stored: (start, end) => announced.push([start, end]) }),
+    );
     store.state({ version: 2, length: LONG, position: null, id: null });
     expect(store.entry(1100)).toBeUndefined();
     expect(announced).toEqual([[0, Infinity]]);
@@ -184,6 +201,36 @@ describe("replies", () => {
     store.view(90_000, 90_010);
     store.reply(1, 1100, songs(1100, 1200));
     expect(store.entry(1100)).toBeUndefined();
+  });
+});
+
+describe("current song", () => {
+  test("announced when its position or id changes, not on other state", () => {
+    const { store } = setup();
+    let changes = 0;
+    store.subscribe(listen({ current: () => changes++ }));
+    store.state({ version: 1, length: LONG, position: 7, id: 70 });
+    expect(changes).toBe(1);
+    store.state({ version: 2, length: LONG + 1, position: 7, id: 70 });
+    expect(changes).toBe(1);
+    store.state({ version: 3, length: LONG, position: 8, id: 70 });
+    expect(store.current).toEqual({ position: 8, id: 70 });
+    store.state({ version: 3, length: LONG, position: 8, id: 71 });
+    expect(changes).toBe(3);
+    store.state(null);
+    expect(changes).toBe(4);
+    expect(store.current).toEqual({ position: null, id: null });
+  });
+
+  test("opening reports the view that decides the first request", () => {
+    const { store, starts } = setup();
+    store.view(0, 10);
+    expect(starts()).toEqual([0]);
+    store.reply(1, 0, songs(0, 100));
+    store.show(false);
+    store.subscribe(listen({ opening: () => store.view(90_050, 90_060) }));
+    store.show(true);
+    expect(starts()).toEqual([90_000]);
   });
 });
 

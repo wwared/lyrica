@@ -55,7 +55,8 @@ export function App() {
         : new URL(cover ?? noCover, location.href).href,
   });
   const [mini, setMini] = useState(false);
-  useEffect(() => store.show(mini), [mini]);
+  // Layout effect: opening centres the list before the fade-in's first frame.
+  useLayoutEffect(() => store.show(mini), [mini]);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const nowPlaying = useRef<HTMLElement>(null);
   const capture = useFlip(nowPlaying, mini);

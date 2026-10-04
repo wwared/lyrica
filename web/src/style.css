@@ -16,13 +16,14 @@
 :root {
   color-scheme: dark;
   /* Gruvbox dark: bg0, fg1, fg4, bg2, then accents (orange is the dark
-     one, the rest bright). */
+     one, too dim for small text; the rest bright). */
   --bg: #282828;
   --fg: #ebdbb2;
   --muted: #a89984;
   --track: #504945;
   --yellow: #fabd2f;
   --orange: #d65d0e;
+  --bright-orange: #fe8019;
   --green: #b8bb26;
   --aqua: #8ec07c;
   --blue: #83a598;
@@ -174,6 +175,10 @@ body {
   color: var(--muted);
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
+}
+
+.queue-row.current > span {
+  color: var(--bright-orange);
 }
 
 /* Pinned to the bottom, with fixed-height children, so nothing moves when the

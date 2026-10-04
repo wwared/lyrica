@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  centre,
   clampAnchor,
   firstRow,
   poolSize,
@@ -91,6 +92,37 @@ describe("reanchor", () => {
     expect(reanchor(0, 0, 500)).toBeNull();
     expect(reanchor(0, maxScrollTop(500), 500)).toBeNull();
     expect(reanchor(0, 0, 0)).toBeNull();
+  });
+});
+
+describe("centre", () => {
+  const middle = (p: { anchor: number; scrollTop: number }) =>
+    p.anchor * ROW_PX + p.scrollTop + VIEW / 2;
+
+  test("puts the row's centre mid-viewport, mid-space so no re-anchor follows", () => {
+    const next = centre(90_000, VIEW, LONG);
+    expect(middle(next)).toBe(90_000 * ROW_PX + ROW_PX / 2);
+    expect(next.scrollTop).toBeGreaterThanOrEqual(0);
+    expect(next.scrollTop).toBeLessThanOrEqual(maxScrollTop(LONG));
+    expect(reanchor(next.anchor, next.scrollTop, LONG)).toBeNull();
+  });
+
+  test("leaves the first or last row flush at the queue's ends", () => {
+    expect(centre(0, VIEW, LONG)).toEqual({ anchor: 0, scrollTop: 0 });
+    expect(centre(3, VIEW, LONG)).toEqual({ anchor: 0, scrollTop: 0 });
+    const end = { anchor: LONG - SPACE_ROWS, scrollTop: maxScrollTop(LONG) };
+    expect(centre(LONG - 1, VIEW, LONG)).toEqual(end);
+    expect(centre(LONG - 4, VIEW, LONG)).toEqual(end);
+  });
+
+  test("stays at the top when the queue is shorter than the list", () => {
+    expect(centre(5, VIEW, 8)).toEqual({ anchor: 0, scrollTop: 0 });
+  });
+
+  test("scrolls a queue within one space without an anchor", () => {
+    const next = centre(3000, VIEW, 5000);
+    expect(next.anchor).toBe(0);
+    expect(middle(next)).toBe(3000 * ROW_PX + ROW_PX / 2);
   });
 });
 

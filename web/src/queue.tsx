@@ -2,7 +2,9 @@ import { useLayoutEffect, useReducer, useRef } from "preact/hooks";
 import { formatTime } from "./progress";
 import type { QueueStore } from "./queue-store";
 import {
+  centre,
   firstRow,
+  type Placement,
   poolSize,
   reanchor,
   resize,
@@ -14,6 +16,8 @@ import {
 // Setting `scrollTop` cancels momentum scrolling (iOS), so the anchor only
 // moves once scrolling has stopped this long with no touch held.
 const SETTLE_MS = 150;
+// Auto-centring resumes this long after the last scroll by the user.
+const RESUME_MS = 15_000;
 
 /**
  * The queue's virtual list (architecture.md → "Live queue"). Scroll state
@@ -38,6 +42,8 @@ export function QueueList({
     first: 0,
     // Entries arrived for rendered rows since the last render.
     stale: false,
+    // The current song changed since the last pass.
+    moved: false,
     // Written in the layout effect, together with the anchor it belongs to.
     pendingScrollTop: null as number | null,
   }).current;
@@ -73,42 +79,94 @@ export function QueueList({
     let frame = 0;
     let settle = 0;
     let touches = 0;
+    // User input on the list stops auto-centring until `resume` fires.
+    let paused = false;
+    let resume = 0;
+    const place = (next: Placement) => {
+      v.anchor = next.anchor;
+      v.scrollTop = next.scrollTop;
+      v.pendingScrollTop = next.scrollTop;
+    };
+    const centred = () => {
+      const { position } = store.current;
+      if (position !== null) place(centre(position, v.viewportPx, v.length));
+    };
     const pass = () => {
       frame = 0;
       v.scrollTop = el.scrollTop;
+      if (v.moved) {
+        v.moved = false;
+        v.stale = true;
+        if (store.shown && !paused) centred();
+      }
       report();
       const pool = poolSize(v.viewportPx, v.length);
       if (v.stale || firstRow(v.scrollTop, pool, v.length) !== v.first)
         render(0);
     };
-    // Never renders here: replies arrive in the socket's message handler,
-    // possibly just ahead of a state push.
-    const unsubscribe = store.subscribe((start, end) => {
-      const rendered = v.anchor + v.first;
-      if (end <= rendered) return;
-      if (start >= rendered + poolSize(v.viewportPx, v.length)) return;
-      v.stale = true;
-      if (frame === 0) frame = requestAnimationFrame(pass);
+    // `stored` and `current` never render here: they come from the socket's
+    // message handler, ahead of now playing's render.
+    const unsubscribe = store.subscribe({
+      stored(start, end) {
+        const rendered = v.anchor + v.first;
+        if (end <= rendered) return;
+        if (start >= rendered + poolSize(v.viewportPx, v.length)) return;
+        v.stale = true;
+        if (frame === 0) frame = requestAnimationFrame(pass);
+      },
+      current() {
+        v.moved = true;
+        if (frame === 0) frame = requestAnimationFrame(pass);
+      },
+      opening() {
+        paused = false;
+        clearTimeout(resume);
+        centred();
+        report();
+        render(0);
+      },
     });
+    const resumed = () => {
+      if (touches > 0) return;
+      paused = false;
+      if (!store.shown) return;
+      centred();
+      render(0);
+    };
+    const wait = () => {
+      clearTimeout(resume);
+      resume = setTimeout(resumed, RESUME_MS);
+    };
+    const pause = () => {
+      paused = true;
+      wait();
+    };
     const settled = () => {
       if (touches > 0) return;
       const next = reanchor(v.anchor, el.scrollTop, v.length);
       if (next === null) return;
-      v.anchor = next.anchor;
-      v.scrollTop = next.scrollTop;
-      v.pendingScrollTop = next.scrollTop;
+      place(next);
       render(0);
     };
     const onScroll = () => {
       if (frame === 0) frame = requestAnimationFrame(pass);
       clearTimeout(settle);
       settle = setTimeout(settled, SETTLE_MS);
+      if (paused) wait();
     };
-    const onTouchStart = (e: TouchEvent) => (touches = e.touches.length);
+    const onTouchStart = (e: TouchEvent) => {
+      touches = e.touches.length;
+      pause();
+    };
     const onTouchEnd = (e: TouchEvent) => {
       touches = e.touches.length;
       clearTimeout(settle);
       settle = setTimeout(settled, SETTLE_MS);
+      if (paused) wait();
+    };
+    // Middle-click autoscroll.
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") pause();
     };
     const resized = new ResizeObserver((entries) => {
       v.viewportPx = entries[0]!.contentRect.height;
@@ -120,15 +178,22 @@ export function QueueList({
     el.addEventListener("touchstart", onTouchStart, passive);
     el.addEventListener("touchend", onTouchEnd, passive);
     el.addEventListener("touchcancel", onTouchEnd, passive);
+    el.addEventListener("wheel", pause, passive);
+    el.addEventListener("pointerdown", onPointerDown, passive);
+    el.addEventListener("keydown", pause, passive);
     return () => {
       unsubscribe();
       cancelAnimationFrame(frame);
       clearTimeout(settle);
+      clearTimeout(resume);
       resized.disconnect();
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
+      el.removeEventListener("wheel", pause);
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("keydown", pause);
     };
   }, []);
 
@@ -136,6 +201,7 @@ export function QueueList({
   v.first = firstRow(v.scrollTop, pool, length);
   v.stale = false;
   const first = v.anchor + v.first;
+  const currentId = store.current.id;
   const rows = [];
   for (let slot = 0; slot < pool; slot++) {
     const position = slotPosition(slot, first, pool);
@@ -146,7 +212,11 @@ export function QueueList({
     rows.push(
       <div
         key={slot}
-        class="queue-row"
+        class={
+          currentId !== null && entry?.id === currentId
+            ? "queue-row current"
+            : "queue-row"
+        }
         role="listitem"
         aria-setsize={length}
         aria-posinset={position + 1}

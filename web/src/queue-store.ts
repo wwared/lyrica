@@ -19,6 +19,16 @@ export type Window = {
   end: number;
 };
 
+/** What the list hears from the store (architecture.md → "Wiring"). */
+export type Listener = {
+  /** Entries stored for positions `start` to `end - 1`. */
+  stored(start: number, end: number): void;
+  /** `state` changed the current song's position or id. */
+  current(): void;
+  /** `show(true)`, before planning: the list places itself and reports its view. */
+  opening(): void;
+};
+
 /** Queue entries loaded on demand around the view (architecture.md → "Blocks"). */
 export type QueueStore = {
   /** On every socket open: the sender for window requests; frees the slots. */
@@ -31,9 +41,13 @@ export type QueueStore = {
   view(first: number, last: number): void;
   /** Whether the list is shown (mini mode). */
   show(shown: boolean): void;
+  /** The current song from the last `state`; both `null` offline or with none. */
+  readonly current: { position: number | null; id: number | null };
+  /** The last `show`. */
+  readonly shown: boolean;
   entry(position: number): Entry | undefined;
-  /** Called with the positions of each stored block; returns the unsubscriber. */
-  subscribe(listener: (start: number, end: number) => void): () => void;
+  /** Returns the unsubscriber. */
+  subscribe(listener: Listener): () => void;
 };
 
 /** Positions per block and per request. */
@@ -57,7 +71,8 @@ export function queueStore(
   let inFlight: { version: number; block: number }[] = [];
   // Blocks waiting to be retried after a `null` reply.
   const retries = new Map<number, number>();
-  let listener: ((start: number, end: number) => void) | null = null;
+  let current: QueueStore["current"] = { position: null, id: null };
+  let listener: Listener | null = null;
 
   const kept = (block: number) =>
     block * BLOCK < last + KEEP_ROWS && (block + 1) * BLOCK > first - KEEP_ROWS;
@@ -67,7 +82,7 @@ export function queueStore(
     retries.clear();
     if (blocks.size === 0) return;
     blocks.clear();
-    listener?.(0, Infinity);
+    listener?.stored(0, Infinity);
   };
 
   const plan = () => {
@@ -100,6 +115,12 @@ export function queueStore(
     state(next) {
       if (next === null || next.version !== queue?.version) drop();
       queue = next;
+      const position = next?.position ?? null;
+      const id = next?.id ?? null;
+      if (position !== current.position || id !== current.id) {
+        current = { position, id };
+        listener?.current();
+      }
       plan();
     },
     reply(version, start, songs) {
@@ -119,7 +140,7 @@ export function queueStore(
           );
         } else {
           blocks.set(block, songs);
-          if (songs.length > 0) listener?.(start, start + songs.length);
+          if (songs.length > 0) listener?.stored(start, start + songs.length);
         }
       }
       plan();
@@ -138,7 +159,14 @@ export function queueStore(
     },
     show(next) {
       shown = next;
+      if (next) listener?.opening();
       plan();
+    },
+    get current() {
+      return current;
+    },
+    get shown() {
+      return shown;
     },
     entry: (position) =>
       blocks.get(Math.floor(position / BLOCK))?.[position % BLOCK],

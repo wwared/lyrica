@@ -66,6 +66,29 @@ export function reanchor(
 }
 
 /**
+ * Puts row `position`'s centre at the viewport's centre; near the queue's
+ * ends the first or last row sits flush.
+ */
+export function centre(
+  position: number,
+  viewportPx: number,
+  length: number,
+): Placement {
+  const offset = Math.max(
+    0,
+    Math.min(
+      position * ROW_PX + ROW_PX / 2 - viewportPx / 2,
+      length * ROW_PX - viewportPx,
+    ),
+  );
+  const anchor = clampAnchor(
+    position - Math.floor(spaceRows(length) / 2),
+    length,
+  );
+  return { anchor, scrollTop: offset - anchor * ROW_PX };
+}
+
+/**
  * After the queue length changes: keeps the queue offset at the viewport's
  * top where it still exists. The clamped anchor always leaves it in the space.
  */
