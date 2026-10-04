@@ -1,6 +1,6 @@
 {
-  "name": "lyrica",
-  "short_name": "lyrica",
+  "name": "Lyrica",
+  "short_name": "Lyrica",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
