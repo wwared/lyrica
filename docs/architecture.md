@@ -112,7 +112,7 @@ Done (`search-mode.tsx`, `search.ts`).
 
 ### Query language
 
-Phase 1 (done, `query.rs` → `compile`) accepts plain words only, split on Unicode whitespace; a blank query is the only error ("Empty search"). Phase 2 adds the whole grammar, parsed with nom. Case-insensitive throughout, field names included.
+Phase 1 (done, `query.rs` → `compile`) accepts plain words only, split on Unicode whitespace; a blank query is the only error ("Empty search"). Phase 2 (roadmap step 8, settled, not built) adds the whole grammar, parsed with nom. Case-insensitive throughout, field names included.
 
 ```
 query = term (spaces term)*
@@ -125,8 +125,11 @@ field = title | artist | albumartist | album | file | any
 - **Terms** are joined by AND. A term matches when one of its fields does: its field, or the default fields `file`, `title`, `artist`, `albumartist`, `album` (never `any`). Different terms may match in different fields.
 - **Word:** substring (`love` finds "Glove"). **Quoted:** substring including spaces; `\"` and `\\` inside. **`^`:** starts with. **`/re/`:** MPD's PCRE2 regex, `\/` for `/`, other backslashes passed on.
 - **`-`** negates any whole term: none of its fields matches. Only in front: inside a value it is literal (`artist:-live` contains "-live").
-- **Plain text** where nothing else applies: an unknown prefix (`re:zero`), a lone `-` or `^`, `^/x/` (starts with "/x/"), a `/` not starting a term (`AC/DC`).
-- **Errors:** an unclosed `"` or `/`.
+- **Plain text** where nothing else applies: an unknown prefix (`re:zero`), a lone `-` or `^`, `^/x/` (starts with "/x/"), a field with nothing after it (`artist:` then a space or the end), a `"` or `/` not starting a value (`AC/DC`, `foo"bar`).
+- **Spaces:** Unicode whitespace (`char::is_whitespace`; nom's `multispace` is ASCII only), as in phase 1. A word runs to the next space.
+- **Delimited values** end at their closing delimiter, which also ends the term: text right after it starts the next term (`"a"b` is `"a" b`; `/x/i` is `/x/` and `i`, MPD's regexes being caseless already). Quoted text: `\"` is `"`, `\\` is `\`, other backslashes literal. Regex: `\/` is `/`, any other backslash pair passed on whole (`/a\\/` is the regex `a\\`, closed by the last `/`).
+- **Empty values** (`""`, `^""`, `//`, negated or not) are dropped: they match everything or nothing. A query of only those is "Empty search".
+- **Errors:** an unclosed `"` or `/` (a lone one included), `QueryError` variants with the toasts `Missing closing "` and `Missing closing /`, answered as `searchfailed` like "Empty search".
 
 | Query                          | Matches entries where                                                               |
 | ------------------------------ | ----------------------------------------------------------------------------------- |
@@ -143,7 +146,9 @@ field = title | artist | albumartist | album | file | any
 - **Regex only** (`=~`, negated `!~`): 10× faster than `contains`. Words and quoted text become literals (every ASCII non-alphanumeric character backslashed), `^` prefixes `^`.
 - **`(*UTF)`** starts every regex, the user's too: MPD compiles regexes in byte mode, where case folding covers ASCII only and `.` is a byte; `(*UTF)` switches PCRE2 to UTF-8 with Unicode case folding (ö/Ö, σ/ς/Σ). Not covered: multi-character folding (ß ≠ ss), accents (bjork ≠ björk, as with `contains`), accents stored as combining marks (a typed "atún" misses those few entries). A user's `(*VERB)` is still valid right after ours.
 - **Several fields** (MPD 0.24 has no `OR`): `(!((file !~ 'r') AND (title !~ 'r') AND …))`; negated `((file !~ 'r') AND …)`; one field `(f =~ 'r')` or `(f !~ 'r')`. Default fields file first (77 ms against 88).
-- **Order:** `AND` stops at the first false operand, so positive terms go first, longest literal first (likely the most selective; characters, ties in query order), negated ones last.
+- **Order:** `AND` stops at the first false operand, so positive literal terms (words, quoted, `^`) go first, longest first (likely the most selective; characters, ties in query order), then positive regexes, then negated terms, both in query order.
+- **Negation is per song:** `(any !~ r)` holds when no tag matches: `((any =~ x) AND (any !~ x))` was empty for x `a`, `the`, `love` (real MPD 0.24.0), though every entry has several tags. Named tags go through the same MPD filter, so a multi-valued one negates the same way (no multi-valued artist among the first 30,000 entries to check it directly). So `-any:x` and multi-valued tags need nothing special.
+- **User regexes** are passed on after `(*UTF)` unchecked, so one can be slow beyond the ceiling (nested quantifiers backtrack per entry, 175,872 entries); single user, their call. MPD reports an invalid one (`searchfailed`).
 - **Quoting, two levels:** the value in single quotes inside the filter, the filter in double quotes as the command's argument; each level backslash-escapes `\` and its quote, so a regex backslash is four on the wire. An apostrophe in a word: `\'` in the regex, `\\\'` in the filter, `\\\\\\'` on the wire (found "It's a Chase!"; four backslashes end the value early). Quoted keywords (`"window"`) and a lone operand in parentheses (`((title =~ 'x'))`) are accepted.
 
 ### Server
