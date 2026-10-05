@@ -1,6 +1,6 @@
-# lyrica
+# Lyrica
 
-A mobile-first web client for [MPD](https://www.musicpd.org/). Built for one user on an iPhone, as a home-screen app.
+A mobile-first web client for [MPD](https://www.musicpd.org/).
 
 ## Features
 
