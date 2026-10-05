@@ -15,6 +15,37 @@ Now playing, the live queue and stored playlists are done and checked on phones.
 - **Dark only:** gruvbox dark with its accent colours, regardless of the system setting.
 - **PWA:** app icon and favicon, screen kept on while visible, portrait on Android.
 
+## Current milestone: album from the start
+
+A toolbar button, at its right, that plays the current song's album from its first entry in the queue with random and single off (done by hand today). Repeat is left alone; the queue isn't changed. One commit per step; docs move with each.
+
+1. **Grouping rule on the server, one copy.** The album walk (step 3) and the list's separators and covers must agree by construction, so the rule moves out of `queue-store.ts`:
+   - `same_group(a, b)` in `bridge.rs`: `album` equal and not `None`, and `folder` equal, from the existing `album()` / `folder()` fallbacks. The only copy.
+   - Window entries gain `"start": bool`: position 0, or not in the same group as the entry before. The server reads `start − 1 … end` in one `playlistinfo` (one queue version) and drops the leading entry; the 200-entry cap counts requested entries.
+   - Frontend: a block request is exactly the block (no leading entry); `starts()` returns `entry.start`; the comparison in `queue-store.ts` goes.
+   - Tests: flags for windows starting at position 0, at a group start and inside a group; `album` `None`; `folder` `None`. Queue-store tests for the new ranges.
+   - Smoke: the "Album grouping" check (separators against `playlistinfo` at 9 spots, including block edges) still matches.
+   - Docs (`architecture.md`): "Windows", "Entries", "Blocks", "Album grouping".
+2. **`lyrica-mpd`: one command list.** A `Client` method sending, as one command list, `random 0` and `single 0` when asked and `playid` when given an id; nothing when there's nothing to send. Unit test against the mock server.
+3. **Server: `{"type":"albumstart"}`.** A `Command` on the command connection, in order with the others (a `next` sent just before is seen), inside the retry helper:
+   - Fresh `status`: current position, random, single. No current song: nothing.
+   - Walk back from the current position in windows of 100 with `same_group` to the group's first entry. Typically one window; worst case, one group spanning the queue, ~1,000 windows (~0.8 s); no cap.
+   - Send `random 0` if random is on, `single 0` if single is on (also `oneshot`), and `playid` with the first entry's id unless it's the current song (it would restart). Nothing to send: nothing sent (MPD emits no idle event for a no-op).
+   - No reply: the state push confirms. By id, so a queue replaced meanwhile makes MPD reject it (logged).
+   - Tests: the walk with a fake window source (group starting at 0, on a window edge, current entry first, spanning windows, `album` `None`); the commands sent for each case above.
+   - Docs (`architecture.md`): WS protocol, a "Queue actions" section.
+4. **Active song changes re-centre.** In mini mode, taps on previous and next call `store.recentre()` after sending, like the cover tap: the pause ends, a fling halts, the current song centres at once, and the push's song change centres the new one. Natural song changes keep respecting the pause. Full mode: nothing (opening centres).
+5. **The button.** `{type: "albumstart"}` in `ws.ts`'s `Command`. At the toolbar's right, 44 × 44 px, Material's `album` icon, muted like the playlists button, its icon ending at the rows' 20 px right inset. Disabled offline or without a current song. A tap sends and calls `store.recentre()`.
+6. **Smoke** against the real MPD (playback control, random and single are allowed):
+   - mid-album, random and single on: the first entry plays, both off, one push;
+   - on the first entry with random on: only random off, the song carries on;
+   - on the first entry, both off: nothing sent, list centred;
+   - an album over 100 entries; one starting at a block edge;
+   - scrolled away or flinging, then the button, previous, next: centred;
+   - a natural song change while paused: not centred.
+
+   Then on the iPhone; this file's "Current state" gets the feature.
+
 ## Open work
 
 - **Live queue design:** the row layout and album styling are open to iteration from daily use (`architecture.md` → "Rows").
@@ -23,4 +54,4 @@ Now playing, the live queue and stored playlists are done and checked on phones.
 
 Ideas to revisit; how they look and work is open.
 
-- **Queue actions:** convenience buttons in the mini-mode toolbar. Example: play the current album from the start — jump to the first track of the current song's album in the queue, play it, and turn random off (done by hand today). The set of actions and how to find album boundaries without fetching the whole queue are open.
+- **More queue actions:** further toolbar buttons beside the album one; which ones is open.
