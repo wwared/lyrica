@@ -13,7 +13,7 @@ import {
   spaceRows,
 } from "./virtual";
 
-const LONG = 175_872;
+const LONG = 180_000;
 const VIEW = 580;
 const maxScrollTop = (length: number) => spaceRows(length) * ROW_PX - VIEW;
 

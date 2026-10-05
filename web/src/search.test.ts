@@ -188,8 +188,8 @@ describe("total", () => {
   test("the server's count sets it: ▲ on the first match then wraps", () => {
     const s = found([[0, CHUNK]], 0);
     expect(canGoBack(s)).toBe(false);
-    const counted = reply(s, total(s, 3156), QUEUE).search;
-    expect(count(counted)).toBe("1 / 3156");
+    const counted = reply(s, total(s, 3210), QUEUE).search;
+    expect(count(counted)).toBe("1 / 3210");
     expect(step(counted, -1).send).toEqual({
       type: "matches",
       id: s.id,
@@ -200,19 +200,19 @@ describe("total", () => {
 
   test("a count for another version or search is dropped", () => {
     const s = found([[0, CHUNK]], 0);
-    expect(reply(s, total(s, 3156, 8), QUEUE)).toEqual({ search: s });
-    const other = { ...total(s, 3156), id: s.id - 1 };
+    expect(reply(s, total(s, 3210, 8), QUEUE)).toEqual({ search: s });
+    const other = { ...total(s, 3210), id: s.id - 1 };
     expect(reply(s, other, QUEUE)).toEqual({ search: s });
   });
 
   test("a count arriving during a fetch leaves the fetch going, and stays", () => {
     const s = found([[0, CHUNK]], 499);
     const fetching = step(s, 1).search;
-    const counted = reply(fetching, total(fetching, 3156), QUEUE).search;
+    const counted = reply(fetching, total(fetching, 3210), QUEUE).search;
     expect(counted.pending).not.toBeNull();
     const next = reply(counted, matches(counted, 500, chunk(500)), QUEUE);
     expect(next.search.focused).toBe(500);
-    expect(next.search.total).toBe(3156);
+    expect(next.search.total).toBe(3210);
   });
 });
 

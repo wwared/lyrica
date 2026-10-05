@@ -7,7 +7,7 @@ import {
   type Window,
 } from "./queue-store";
 
-const LONG = 175_872;
+const LONG = 180_000;
 
 const songs = (start: number, end: number): Entry[] =>
   Array.from({ length: end - start }, (_, i) => ({
