@@ -177,6 +177,43 @@ describe("total", () => {
       ).total,
     ).toBeNull();
   });
+
+  const total = (s: Search, n: number, version = 7): Reply => ({
+    type: "total",
+    id: s.id,
+    version,
+    total: n,
+  });
+
+  test("the server's count sets it: ▲ on the first match then wraps", () => {
+    const s = found([[0, CHUNK]], 0);
+    expect(canGoBack(s)).toBe(false);
+    const counted = reply(s, total(s, 3156), QUEUE).search;
+    expect(count(counted)).toBe("1 / 3156");
+    expect(step(counted, -1).send).toEqual({
+      type: "matches",
+      id: s.id,
+      query: "love",
+      start: 3000,
+    });
+  });
+
+  test("a count for another version or search is dropped", () => {
+    const s = found([[0, CHUNK]], 0);
+    expect(reply(s, total(s, 3156, 8), QUEUE)).toEqual({ search: s });
+    const other = { ...total(s, 3156), id: s.id - 1 };
+    expect(reply(s, other, QUEUE)).toEqual({ search: s });
+  });
+
+  test("a count arriving during a fetch leaves the fetch going, and stays", () => {
+    const s = found([[0, CHUNK]], 499);
+    const fetching = step(s, 1).search;
+    const counted = reply(fetching, total(fetching, 3156), QUEUE).search;
+    expect(counted.pending).not.toBeNull();
+    const next = reply(counted, matches(counted, 500, chunk(500)), QUEUE);
+    expect(next.search.focused).toBe(500);
+    expect(next.search.total).toBe(3156);
+  });
 });
 
 describe("stepping", () => {
@@ -283,6 +320,13 @@ describe("fetching", () => {
     expect(next.toast).toBe(UNSERVED);
     expect(next.search.focused).toBe(499);
     expect(next.search.pending).toBeNull();
+  });
+
+  test("going stale after the first match marks it; the next ▼ reruns", () => {
+    const s = found([[0, CHUNK]], 120);
+    const marked = reply(s, { type: "searchstale", id: s.id }, QUEUE).search;
+    expect(marked.stale).toBe(true);
+    expect(step(marked, 1).send).toMatchObject({ type: "search", from: 1200 });
   });
 });
 

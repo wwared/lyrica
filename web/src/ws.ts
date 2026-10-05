@@ -250,6 +250,10 @@ function parse(
     return { type: "searchfailed", id: message.id, error: message.error };
   if (message?.type === "searchstale")
     return { type: "searchstale", id: message.id };
+  if (message?.type === "total") {
+    const { id, version, total } = message;
+    return { type: "total", id, version, total };
+  }
   if (message?.type !== "state") return;
   const { state, title, artist, album, folder, elapsed, duration, volume } =
     message;

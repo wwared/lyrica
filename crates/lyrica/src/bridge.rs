@@ -29,6 +29,10 @@ const WALK_WINDOW: u32 = 100;
 /// it the next scan would go before the `status` fetch a state change set
 /// off meanwhile (`docs/architecture.md` → "Search" → "Server").
 const STEP_GAP: Duration = Duration::from_millis(2);
+/// Counting is background work: its steps (whole scans) wait until this long
+/// after the first match was sent and after the last request, so the rows the
+/// client loads around the match, or while scrolling, go first.
+const COUNT_IDLE: Duration = Duration::from_millis(100);
 /// Escaped in URL path segments: everything but RFC 3986 unreserved characters.
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -541,7 +545,8 @@ async fn load_listed(client: &mut Client, name: &str) -> Result<bool> {
 /// Serves queue windows, playlist listings and searches for all WebSocket
 /// clients, one MPD command at a time, on a dedicated connection, so state
 /// pushes and commands never wait on them. Waiting requests go before each
-/// search step; searches of several connections take turns.
+/// search step; searches of several connections take turns; counting waits
+/// for the task to go idle.
 pub async fn serve_reads(
     mpd: Arc<Mpd>,
     music_url: Option<String>,
@@ -551,31 +556,49 @@ pub async fn serve_reads(
     let mut client = None;
     let mut searches: VecDeque<Search> = VecDeque::new();
     let mut stepped = false;
+    let mut last_request = Instant::now();
     loop {
-        let request = match searches.pop_front() {
-            None => requests.recv().await,
-            Some(mut search) => match requests.try_recv() {
-                Ok(request) => {
-                    searches.push_front(search);
-                    Some(request)
-                }
+        searches.retain(|s| !s.reply.is_closed());
+        // When a search may step: at once while finding the first match.
+        let ready_at = |s: &Search| {
+            s.counting_since()
+                .map(|since| since.max(last_request) + COUNT_IDLE)
+        };
+        let request = if searches.is_empty() {
+            requests.recv().await
+        } else {
+            match requests.try_recv() {
+                Ok(request) => Some(request),
+                Err(TryRecvError::Disconnected) => None,
                 Err(TryRecvError::Empty) if stepped => {
-                    searches.push_front(search);
                     stepped = false;
                     tokio::time::sleep(STEP_GAP).await;
                     continue;
                 }
                 Err(TryRecvError::Empty) => {
-                    let offline = snapshots.borrow().state == PlayState::Offline;
-                    stepped = !search.reply.is_closed();
-                    if stepped && search.step(&mpd, &mut client, offline).await {
-                        searches.push_back(search);
+                    let now = Instant::now();
+                    let ready = searches
+                        .iter()
+                        .position(|s| ready_at(s).is_none_or(|at| at <= now));
+                    if let Some(i) = ready {
+                        let mut search = searches.remove(i).expect("position in range");
+                        let offline = snapshots.borrow().state == PlayState::Offline;
+                        stepped = true;
+                        if search.step(&mpd, &mut client, offline).await {
+                            searches.push_back(search);
+                        }
+                        continue;
                     }
-                    continue;
+                    let wake = searches.iter().filter_map(ready_at).min();
+                    let wake = wake.expect("only counting searches wait");
+                    tokio::select! {
+                        request = requests.recv() => request,
+                        () = tokio::time::sleep_until(wake.into()) => continue,
+                    }
                 }
-                Err(TryRecvError::Disconnected) => None,
-            },
+            }
         };
+        last_request = Instant::now();
         let Some(ReadRequest { read, reply }) = request else {
             return;
         };
@@ -1493,10 +1516,10 @@ mod tests {
         serde_json::from_str(&text).unwrap()
     }
 
-    /// Whether `reply` is a search's last.
+    /// Whether `reply` is a search's last: its total, or none (no matches,
+    /// stale, failed).
     fn last(reply: &serde_json::Value) -> bool {
         reply["type"] != "matches"
-            || !reply["first"].is_null()
             || (reply["start"] == 0 && reply["positions"] == serde_json::json!([]))
     }
 
@@ -1531,11 +1554,16 @@ mod tests {
             (Some(LENGTH + 5), 0, 0),
         ] {
             let replies = run(&every5, from).await;
+            let (total, replies) = replies.split_last().unwrap();
+            assert_eq!(
+                total,
+                &serde_json::json!({"type": "total", "id": 7, "version": 1, "total": 2000})
+            );
             assert_eq!(replies[0]["start"], 0, "chunk 0 first, from {from:?}");
             for reply in &replies[..replies.len() - 1] {
                 assert!(reply["first"].is_null());
             }
-            for reply in &replies {
+            for reply in replies {
                 let start = reply["start"].as_u64().unwrap() as usize;
                 assert_eq!(reply["positions"], chunk(start));
             }
@@ -1546,11 +1574,13 @@ mod tests {
                 "from {from:?}"
             );
         }
-        // Fewer than a chunk, none after `from`: wraps within chunk 0.
+        // Fewer than a chunk, none after `from`: wraps within chunk 0, and
+        // the total is known at once.
         let few = [3, 8];
         let replies = run(&few, Some(8)).await;
-        assert_eq!(replies.len(), 1);
+        assert_eq!(replies.len(), 2);
         assert_eq!(replies[0]["first"], 0);
+        assert_eq!(replies[1]["total"], 2);
         // No matches.
         let replies = run(&[], Some(8)).await;
         assert_eq!(
@@ -1559,6 +1589,64 @@ mod tests {
                 serde_json::json!({"type": "matches", "id": 7, "version": 1, "start": 0,
                                 "positions": [], "first": null})
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn counting_follows_the_first_match_with_only_the_total() {
+        let mut t = Searching::start().await;
+        let every5: Vec<u32> = (0..2000).map(|i| i * 5).collect();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        t.send(search(1, "x", None), &tx).await;
+        t.serve(1, &every5).await;
+        assert_eq!(received(&mut rx).await["first"], 0);
+        // Windows asked for around the match go first: counting waits until
+        // the task has been idle for COUNT_IDLE.
+        let asked = Instant::now();
+        t.send(window(0, 2), &tx).await;
+        let (request, answer) = t.next().await;
+        assert_eq!(request, "playlistinfo 0:2");
+        tokio::time::sleep(COUNT_IDLE / 2).await;
+        answer.send("OK\n".into()).unwrap();
+        assert_eq!(received(&mut rx).await["type"], "queue");
+        t.send(window(0, 2), &tx).await;
+        let (request, answer) = t.next().await;
+        assert_eq!(request, "playlistinfo 0:2");
+        answer.send("OK\n".into()).unwrap();
+        assert_eq!(received(&mut rx).await["type"], "queue");
+        let windowed = Instant::now();
+        let (request, answer) = t.next().await;
+        assert!(request.starts_with("search x "), "{request}");
+        assert!(windowed.elapsed() >= COUNT_IDLE - Duration::from_millis(5));
+        assert!(asked.elapsed() >= COUNT_IDLE + COUNT_IDLE / 2);
+        answer.send(found(1, &every5, &request)).unwrap();
+        let mut reads = 1;
+        let total = loop {
+            tokio::select! {
+                _ = t.serve(1, &every5) => reads += 1,
+                reply = received(&mut rx) => break reply,
+            }
+        };
+        assert_eq!(
+            total,
+            serde_json::json!({"type": "total", "id": 1, "version": 1, "total": 2000})
+        );
+        assert!(reads <= 3, "{reads} count reads");
+        // Over once counted: the window is the next request.
+        t.send(window(0, 2), &tx).await;
+        let (request, answer) = t.next().await;
+        assert_eq!(request, "playlistinfo 0:2");
+        answer.send("OK\n".into()).unwrap();
+        received(&mut rx).await;
+
+        // The queue changing while counting.
+        t.send(search(2, "x", None), &tx).await;
+        t.serve(1, &every5).await;
+        received(&mut rx).await;
+        t.serve(2, &every5).await;
+        assert_eq!(
+            received(&mut rx).await,
+            serde_json::json!({"type": "searchstale", "id": 2})
         );
     }
 

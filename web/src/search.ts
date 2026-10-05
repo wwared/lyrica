@@ -26,6 +26,8 @@ export type Reply =
     }
   | { type: "searchfailed"; id: number; error: string }
   | { type: "searchstale"; id: number }
+  /** After the reply with `first`: the count. */
+  | { type: "total"; id: number; version: number; total: number }
   /** The socket closed. */
   | { type: "lost" };
 
@@ -172,19 +174,29 @@ export function reply(s: Search, r: Reply, queue: Queue): Step {
         : { ...s, pending: null, stale: true, old: false };
     return s.pending === null ? { search } : { search, toast: LOST };
   }
+  if (r.id !== s.id) return { search: s };
   const pending = s.pending;
-  if (r.id !== s.id || pending === null) return { search: s };
+  // After the reply with `first`, while the server counts.
+  if (r.type === "total") {
+    if (r.version !== s.version || s.old) return { search: s };
+    return { search: { ...s, total: r.total } };
+  }
+  if (r.type === "searchstale") {
+    if (pending?.kind === "search") {
+      const from = pending.direction === 0 ? queue.position : pending.from;
+      return search(s, from, pending.direction);
+    }
+    // Counting or fetching: the matches found are out of date.
+    if (s.focused === null) return { search: s };
+    return { search: { ...s, stale: true } };
+  }
+  if (pending === null) return { search: s };
   if (r.type === "searchfailed") {
     const search =
       s.focused === null
         ? { ...IDLE, id: s.id }
         : { ...s, pending: null, stale: true, old: false };
     return { search, toast: r.error };
-  }
-  if (r.type === "searchstale") {
-    if (pending.kind !== "search") return { search: s };
-    const from = pending.direction === 0 ? queue.position : pending.from;
-    return search(s, from, pending.direction);
   }
   if (r.positions === null) {
     return { search: { ...s, pending: null }, toast: UNSERVED };
@@ -197,7 +209,8 @@ export function reply(s: Search, r: Reply, queue: Queue): Step {
     ...s,
     chunks,
     version: r.version,
-    total: totalOf(chunks),
+    // A rerun's chunks replace the old ones, and their total.
+    total: (s.old ? null : s.total) ?? totalOf(chunks),
     old: false,
   };
   if (r.first === null) return { search: next };
@@ -263,7 +276,8 @@ function fetched(
   // `version` `null` with `[]`: MPD rejected the range, the queue changed.
   if (r.version !== s.version) return rerun(s, pending.direction);
   const chunks = new Map(s.chunks).set(r.start, positions);
-  const next = { ...s, chunks, total: totalOf(chunks), pending: null };
+  const total = s.total ?? totalOf(chunks);
+  const next = { ...s, chunks, total, pending: null };
   if (position(next, pending.target) !== undefined)
     return go(next, pending.target, pending.direction);
   // ▼ past the last match: the empty chunk set the total.

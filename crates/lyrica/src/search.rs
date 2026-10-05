@@ -1,9 +1,9 @@
 //! Queue search (`docs/architecture.md` → "Search" → "Server"): a query's
-//! matches in chunks, and the first one after the current song.
+//! matches in chunks, the first one after the current song, then their count.
 
 use std::{sync::Arc, time::Instant};
 
-use lyrica_mpd::{Client, Error, Filter, QueueMatches};
+use lyrica_mpd::{Client, Error, Filter};
 use serde::Serialize;
 use tokio::sync::mpsc;
 
@@ -28,6 +28,11 @@ enum Message<'a> {
     },
     SearchStale {
         id: u32,
+    },
+    Total {
+        id: u32,
+        version: u32,
+        total: u32,
     },
 }
 
@@ -109,12 +114,21 @@ pub struct Search {
     /// The current song's position.
     from: Option<u32>,
     pub reply: mpsc::UnboundedSender<String>,
-    /// Set by chunk 0 when the first match after `from` lies beyond it.
+    /// Set by a full chunk 0.
+    found: Option<Found>,
+}
+
+struct Found {
+    version: u32,
+    /// Fed every chunk read, so counting starts from what probing learnt.
+    count: Count,
+    /// While the first match after `from` lies beyond the chunks read.
     probing: Option<Probing>,
+    /// When the first match was sent; counting goes on from then.
+    counting_since: Option<Instant>,
 }
 
 struct Probing {
-    version: u32,
     /// Resent with `first: 0` when no match follows `from`.
     chunk0: Vec<u32>,
     bracket: Bracket,
@@ -132,14 +146,22 @@ impl Search {
             filter: Arc::new(filter),
             from,
             reply,
-            probing: None,
+            found: None,
         }
+    }
+
+    /// When the first match was sent, while counting; `None` before.
+    pub fn counting_since(&self) -> Option<Instant> {
+        self.found.as_ref().and_then(|f| f.counting_since)
     }
 
     /// Reads the next chunk and replies; false once the search is over.
     pub async fn step(&mut self, mpd: &Mpd, client: &mut Option<Client>, offline: bool) -> bool {
         let id = self.id;
-        let chunk = self.probing.as_ref().map_or(0, |p| p.bracket.next());
+        let chunk = self.found.as_ref().map_or(0, |f| match &f.probing {
+            Some(p) => p.bracket.next(),
+            None => f.count.next(),
+        });
         let start = chunk * CHUNK;
         if offline {
             let _ = self.reply.send(failed(id, "MPD offline"));
@@ -164,7 +186,7 @@ impl Search {
             Ok(found) => found,
             // Chunk 0 ran the same query: a later `ACK` is the queue changing
             // (`Bad song index`).
-            Err(Error::Ack(ack)) if self.probing.is_some() => {
+            Err(Error::Ack(ack)) if self.found.is_some() => {
                 tracing::debug!("search {id}: {ack}");
                 send(Message::SearchStale { id }.text());
                 return false;
@@ -179,53 +201,87 @@ impl Search {
                 return false;
             }
         };
-        let Some(probing) = &mut self.probing else {
-            let more = first_chunk(id, self.from, &found, send);
-            if more && let Some(from) = self.from {
-                self.probing = Some(Probing {
-                    version: found.queue_version,
-                    bracket: Bracket::new(from, found.queue_length, &found.positions),
-                    chunk0: found.positions,
-                });
+        let Some(f) = &mut self.found else {
+            let version = found.queue_version;
+            let positions = found.positions;
+            let first = first_match(self.from, &positions);
+            send(matches(id, Some(version), 0, Some(&positions), first));
+            if positions.len() < CHUNK as usize {
+                if !positions.is_empty() {
+                    let total = positions.len() as u32;
+                    send(Message::Total { id, version, total }.text());
+                }
+                return false;
             }
-            return more;
+            let count = Count::new(found.queue_length, &positions);
+            let probing = match (first, self.from) {
+                (None, Some(from)) => Some(Probing {
+                    bracket: Bracket::new(from, found.queue_length, &positions),
+                    chunk0: positions,
+                }),
+                _ => None,
+            };
+            let counting_since = probing.is_none().then(Instant::now);
+            self.found = Some(Found {
+                version,
+                count,
+                probing,
+                counting_since,
+            });
+            return self.counted(send);
         };
-        let version = probing.version;
+        let version = f.version;
         if found.queue_version != version {
             send(Message::SearchStale { id }.text());
             return false;
         }
         let positions = &found.positions;
+        f.count.record(chunk, positions);
+        let Some(probing) = &mut f.probing else {
+            return self.counted(send);
+        };
         let reply =
             |start, positions, first| matches(id, Some(version), start, Some(positions), first);
         match probing.bracket.record(chunk, positions) {
             Probe::Next => {
                 send(reply(start, positions, None));
-                true
+                return true;
             }
             Probe::First(index) if index / CHUNK == chunk => {
                 send(reply(start, positions, Some(index)));
-                false
             }
             Probe::First(index) => {
                 send(reply(start, positions, None));
                 send(reply(index, probing.bracket.hi_positions(), Some(index)));
-                false
             }
             Probe::Wrap => {
                 send(reply(start, positions, None));
                 send(reply(0, &probing.chunk0, Some(0)));
-                false
             }
         }
+        f.probing = None;
+        f.counting_since = Some(Instant::now());
+        self.counted(send)
+    }
+
+    /// After the first match: the total once known; whether counting goes on.
+    fn counted(&self, send: impl Fn(String)) -> bool {
+        let Some(f) = &self.found else { return false };
+        if f.probing.is_some() {
+            return true;
+        }
+        let Some(total) = f.count.total else {
+            return true;
+        };
+        let (id, version) = (self.id, f.version);
+        send(Message::Total { id, version, total }.text());
+        false
     }
 }
 
-/// Replies with chunk 0, with `first` when it settles it; whether probing
-/// must follow.
-fn first_chunk(id: u32, from: Option<u32>, found: &QueueMatches, send: impl Fn(String)) -> bool {
-    let positions = &found.positions;
-    let first = match from {
+/// Index of the first match after `from` in chunk 0, when it settles it.
+fn first_match(from: Option<u32>, positions: &[u32]) -> Option<u32> {
+    match from {
         _ if positions.is_empty() => None,
         None => Some(0),
         Some(from) => match positions.partition_point(|&p| p <= from) {
@@ -233,10 +289,60 @@ fn first_chunk(id: u32, from: Option<u32>, found: &QueueMatches, send: impl Fn(S
             _ if positions.len() < CHUNK as usize => Some(0),
             _ => None,
         },
-    };
-    let version = Some(found.queue_version);
-    send(matches(id, version, 0, Some(positions), first));
-    !positions.is_empty() && first.is_none()
+    }
+}
+
+/// Narrows down, in chunks, where the matches end: a bracket for the first
+/// match after the queue's last position, which never exists, so it closes
+/// on the last full chunk and the empty one after it, unless a short chunk
+/// turns up first.
+#[derive(Debug)]
+struct Count {
+    bracket: Bracket,
+    total: Option<u32>,
+}
+
+impl Count {
+    /// From a full chunk 0.
+    fn new(length: u32, chunk0: &[u32]) -> Self {
+        let mut count = Count {
+            bracket: Bracket::new(length - 1, length, chunk0),
+            total: None,
+        };
+        count.settle();
+        count
+    }
+
+    /// Chunk to read next, while the total is unknown.
+    fn next(&self) -> u32 {
+        self.bracket.next()
+    }
+
+    /// Takes in any chunk read at the same queue version; chunks outside
+    /// the bracket tell nothing new.
+    fn record(&mut self, chunk: u32, positions: &[u32]) {
+        let b = &mut self.bracket;
+        if self.total.is_some() || chunk <= b.lo || chunk > b.hi {
+            return;
+        }
+        let n = positions.len() as u32;
+        if n > 0 && n < CHUNK {
+            self.total = Some(chunk * CHUNK + n);
+            return;
+        }
+        // Every position lies below the length, at or before `from`: the
+        // bracket only moves `lo` up or `hi` down, never finds a first match.
+        b.record(chunk, positions);
+        self.settle();
+    }
+
+    /// `lo` full and `hi`, right after it, empty: the total is `hi`'s start.
+    fn settle(&mut self) {
+        let b = &self.bracket;
+        if b.hi == b.lo + 1 && matches!(b.hi_kind, Hi::Empty) {
+            self.total = Some(b.hi * CHUNK);
+        }
+    }
 }
 
 /// What a chunk told the bracket.
@@ -393,29 +499,60 @@ impl Bracket {
 mod tests {
     use super::*;
 
+    /// Matches `c × 500` to `c × 500 + 499` of `positions`, as MPD's window.
+    fn chunk_of(positions: &[u32], length: u32, c: u32) -> &[u32] {
+        let start = (c * CHUNK) as usize;
+        assert!(start <= length as usize, "window starts past the queue");
+        &positions[start.min(positions.len())..(start + CHUNK as usize).min(positions.len())]
+    }
+
     /// Runs the bracket over the matches at `positions` (sorted) in a queue
     /// of `length`: the first match after `from` (`None`: wrap) and the
     /// chunks read after chunk 0.
-    fn probe(positions: &[u32], length: u32, from: u32) -> (Option<u32>, u32) {
-        let chunk = |c: u32| {
-            let start = (c * CHUNK) as usize;
-            assert!(start <= length as usize, "window starts past the queue");
-            &positions[start.min(positions.len())..(start + CHUNK as usize).min(positions.len())]
-        };
+    fn probe(positions: &[u32], length: u32, from: u32) -> (Option<u32>, Vec<u32>) {
+        let chunk = |c| chunk_of(positions, length, c);
         let mut bracket = Bracket::new(from, length, chunk(0));
         let bound = 2 * (bracket.hi - bracket.lo).next_power_of_two().ilog2() + 1;
-        let mut reads = 0;
+        let mut reads = Vec::new();
         loop {
             let c = bracket.next();
             assert!(bracket.lo < c && c <= bracket.hi, "{c} outside {bracket:?}");
-            reads += 1;
-            assert!(reads <= bound, "over {bound} reads: {bracket:?}");
+            reads.push(c);
+            assert!(
+                reads.len() as u32 <= bound,
+                "over {bound} reads: {bracket:?}"
+            );
             match bracket.record(c, chunk(c)) {
                 Probe::Next => {}
                 Probe::First(index) => return (Some(index), reads),
                 Probe::Wrap => return (None, reads),
             }
         }
+    }
+
+    /// Counts the matches at `positions` (at least a chunk) after chunk 0
+    /// and the chunks in `seen`: the total and the chunks read for it, none
+    /// of them read before.
+    fn count(positions: &[u32], length: u32, seen: &[u32]) -> (u32, Vec<u32>) {
+        let chunk = |c| chunk_of(positions, length, c);
+        let mut count = Count::new(length, chunk(0));
+        for &c in seen {
+            count.record(c, chunk(c));
+        }
+        let b = &count.bracket;
+        let bound = 2 * (b.hi - b.lo).next_power_of_two().ilog2() + 1;
+        let mut reads = Vec::new();
+        while count.total.is_none() {
+            let c = count.next();
+            assert!(
+                c != 0 && !seen.contains(&c) && !reads.contains(&c),
+                "{c} read again"
+            );
+            reads.push(c);
+            assert!(reads.len() as u32 <= bound, "over {bound} reads: {count:?}");
+            count.record(c, chunk(c));
+        }
+        (count.total.unwrap(), reads)
     }
 
     fn expected(positions: &[u32], from: u32) -> Option<u32> {
@@ -431,10 +568,11 @@ mod tests {
         *seed
     }
 
-    #[test]
-    fn finds_the_first_match_after_from_in_any_layout() {
-        let length = 175_872;
-        let mut seed = 0x2545_f491_4f6c_dd1d;
+    const LENGTH: u32 = 175_872;
+
+    /// Match sets of every shape: dense, sparse, clustered, chunk-sized.
+    fn layouts(seed: &mut u64) -> Vec<Vec<u32>> {
+        let length = LENGTH;
         let mut sets: Vec<Vec<u32>> = vec![
             (0..length).collect(),
             (0..length).step_by(3).collect(),
@@ -448,17 +586,32 @@ mod tests {
                 .collect(),
             // One match past chunk 0.
             (0..500).chain([150_000]).collect(),
-            // Exactly two full chunks.
+            // Exactly one, two and three full chunks; one short of two.
+            (0..500).map(|i| i * 300).collect(),
             (0..1000).map(|i| i * 7).collect(),
+            (0..1500).map(|i| i * 117).collect(),
+            (0..999).map(|i| i * 170).collect(),
+            // The last chunk full, ending at the queue's end.
+            (length - 2000..length).collect(),
         ];
         for density in [2, 20, 200] {
             sets.push(
                 (0..length)
-                    .filter(|_| random(&mut seed).is_multiple_of(density))
+                    .filter(|_| random(seed).is_multiple_of(density))
                     .collect(),
             );
         }
-        for positions in sets.iter().filter(|p| p.len() >= CHUNK as usize) {
+        sets
+    }
+
+    #[test]
+    fn finds_the_first_match_after_from_in_any_layout() {
+        let length = LENGTH;
+        let mut seed = 0x2545_f491_4f6c_dd1d;
+        for positions in layouts(&mut seed)
+            .iter()
+            .filter(|p| p.len() >= CHUNK as usize)
+        {
             let last_of_chunk0 = positions[CHUNK as usize - 1];
             let mut froms = vec![last_of_chunk0, length - 1, length + 10];
             for &p in [positions[positions.len() / 2], *positions.last().unwrap()].iter() {
@@ -476,8 +629,27 @@ mod tests {
     }
 
     #[test]
+    fn counts_the_matches_in_any_layout_from_what_probing_read() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15;
+        for positions in layouts(&mut seed)
+            .iter()
+            .filter(|p| p.len() >= CHUNK as usize)
+        {
+            let total = positions.len() as u32;
+            assert_eq!(count(positions, LENGTH, &[]).0, total);
+            let last_of_chunk0 = positions[CHUNK as usize - 1];
+            let froms = [last_of_chunk0, positions[positions.len() / 2], LENGTH - 1];
+            // The bracket starts from a chunk 0 all at or before `from`.
+            for from in froms.into_iter().filter(|&f| f >= last_of_chunk0) {
+                let (_, seen) = probe(positions, LENGTH, from);
+                assert_eq!(count(positions, LENGTH, &seen).0, total, "from {from}");
+            }
+        }
+    }
+
+    #[test]
     fn interpolation_reads_few_chunks_on_even_spreads() {
-        let length = 175_872;
+        let length = LENGTH;
         // "love": 3,156 matches, one per ~56 positions.
         let love: Vec<u32> = (0..3156).map(|i| i * 55 + i % 7).collect();
         // "the": 47,646, one per ~3.7.
@@ -490,7 +662,11 @@ mod tests {
         ] {
             let (first, reads) = probe(positions, length, from);
             assert_eq!(first, expected(positions, from));
-            assert!(reads <= 2, "{reads} reads from {from}");
+            assert!(reads.len() <= 2, "{reads:?} from {from}");
+        }
+        for positions in [&love, &the] {
+            let (_, reads) = count(positions, length, &[]);
+            assert!(reads.len() <= 3, "{reads:?}");
         }
     }
 }
