@@ -30,7 +30,7 @@ To test connection loss, run lyrica against a proxy and kill it, never MPD itsel
 
 ## Testing the frontend
 
-Run the server (`cargo run -p lyrica -- --music-url https://webmusic.wwared.com/ --stream-url https://music.wwared.com/`, defaults to MPD at `127.0.0.1:6600` and HTTP on `127.0.0.1:8080`; drop `--music-url` to test without album art, `--stream-url` without the play-here toggle) and either `npm run dev` in `web/` (proxies `/ws` to it) or `npm run build` (served by the debug server without recompiling). `music.wwared.com` is a different MPD's `httpd` output (the local MPD has none), so its audio doesn't match the local state.
+Run the server (`cargo run -p lyrica -- --music-url https://music.example.com/ --stream-url https://stream.example.com/`, defaults to MPD at `127.0.0.1:6600` and HTTP on `127.0.0.1:8080`; drop `--music-url` to test without album art, `--stream-url` without the play-here toggle) and either `npm run dev` in `web/` (proxies `/ws` to it) or `npm run build` (served by the debug server without recompiling). The local MPD has no `httpd` output, so a stream from another MPD plays audio that doesn't match the local state.
 
 Headless Chromium (`nix shell nixpkgs#chromium`): **always** start it with exactly these flags; without `--password-store=basic` navigation hangs (`Page.navigate` never returns, pages stay blank, the renderer looks frozen):
 
@@ -54,7 +54,7 @@ iOS home-screen layout: add `standalone` to `<html>`'s classes in the page (as `
 
 ## Frontend gotchas
 
-- Preact 11 no longer appends `px` to numeric style values: `style={{ height: 100 }}` is ignored; write `` `${n}px` ``.
+- Preact 11 doesn't append `px` to numeric style values: `style={{ height: 100 }}` is ignored; write `` `${n}px` ``.
 
 ## Commands
 
@@ -79,6 +79,7 @@ crates/lyrica/           lyrica: server binary, embeds web/dist
 web/                     Preact + TypeScript PWA (Vite)
 web/icons/lyrica.png     App icon source (not shipped); icons in web/public/ are made from it
 docs/                    Project documentation
+LICENSE, CREDITS.md      The Unlicense; third-party assets and their licenses
 ```
 
 ## Frontend embedding
@@ -124,7 +125,7 @@ services.lyrica = {
 };
 ```
 
-`settings` maps 1:1 to the command-line flags (`lyrica --help`); `null` omits one. The MPD password goes in the environment file (`LYRICA_MPD_PASSWORD`, also read when running by hand), not in `settings`, which would put it in the Nix store and the process list. Verified in a NixOS VM test (not part of `nix flake check`): flags in `ExecStart`, the page served, the password reaching a fake MPD and absent from `ps`.
+`settings` maps 1:1 to the command-line flags (`lyrica --help`); `null` omits one. The MPD password goes in the environment file (`LYRICA_MPD_PASSWORD`, also read when running by hand), not in `settings`, which would put it in the Nix store and the process list.
 
 ## Dependencies
 

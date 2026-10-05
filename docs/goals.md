@@ -18,7 +18,7 @@ lyrica is a mobile-first PWA client for [MPD](https://www.musicpd.org/), primari
 - **MPD over TCP only** (`host:port`), optional password. MPD is reachable only over an internal VPN.
 - **Never modify files through MPD.** No database updates, stored-playlist edits, sticker writes or mounts. Reading stored playlists and loading them into the queue is fine.
 - **Partial protocol coverage.** The MPD crate implements only what the frontend needs; commands are added as features require them.
-- **Setup-specific features are welcome.** E.g. every music library path is also readable over HTTP(S) from a known base URL, which lyrica can use instead of MPD (cover art, file listings) to work around MPD protocol limitations.
+- **Setup-specific features are welcome.** E.g. every music library path is also readable over HTTP(S) from a known base URL, which lyrica uses instead of MPD for cover art, working around MPD protocol limitations.
 
 ## Non-goals
 
