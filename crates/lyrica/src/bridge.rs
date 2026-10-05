@@ -299,7 +299,7 @@ pub enum Read {
         filter: Filter,
         from: Option<u32>,
     },
-    /// Fetches the chunk of matches `start..start + 500`.
+    /// Fetches the chunk of matches `start..start + search::CHUNK`.
     Matches {
         id: u32,
         filter: Filter,

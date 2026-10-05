@@ -17,7 +17,7 @@ use crate::{
     parse::{self, Line},
 };
 
-/// Capacity reserved for a queue range's songs, whatever its length.
+/// Cap on the capacity reserved up front for a response's songs or positions.
 const MAX_RESERVED_SONGS: usize = 1000;
 
 /// Protocol version from MPD's greeting.

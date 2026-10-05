@@ -15,8 +15,8 @@
 
 :root {
   color-scheme: dark;
-  /* Gruvbox dark: bg0, bg0_s, bg1, fg1, fg3, fg4, bg2, then accents (orange
-     is the dark one, too dim for small text; the rest bright). */
+  /* Gruvbox dark: bg0, bg0_s, bg1, fg1, fg4, fg3, bg2, then accents
+     (`--orange` is the dark one, too dim for small text; the rest bright). */
   --bg: #282828;
   --bg-soft: #32302f;
   --bg1: #3c3836;
@@ -223,7 +223,7 @@ body {
   border-color: var(--muted);
 }
 
-/* Our own clear button instead: a 44 px target, the leave ✕'s colour. */
+/* Hidden for our own clear button: a 44 px target, the leave ✕'s colour. */
 .search-bar input::-webkit-search-cancel-button {
   -webkit-appearance: none;
   appearance: none;
@@ -1087,7 +1087,7 @@ body {
   height: 24px;
 }
 
-/* Top right of the mini box in both modes, so it never moves: a 44 px target
+/* Top right of the section in both modes, so it never moves: a 44 px target
    over a 24 px column, centred on the title line. */
 .switch {
   grid-area: switch;

@@ -6,8 +6,8 @@ const PX_PER_S = 50;
 /**
  * One line of text. If it is too wide, it waits, scrolls until its end is
  * visible, waits, scrolls back, and repeats. Restarts from the beginning when
- * the text changes, when it comes on screen and when `paused` turns off;
- * frozen in place while off screen or `paused`.
+ * the text changes, when it comes on screen and when `paused` turns off.
+ * Stopped while off screen, frozen in place while `paused`.
  */
 export function Marquee({
   text,

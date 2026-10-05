@@ -170,7 +170,7 @@ export function connect(
     };
   };
 
-  // Also from `onVisibility`, which detaches `onclose` first.
+  // Settles what `onclose`, detached here, would have.
   const shutdown = () => {
     window.clearTimeout(retry);
     socket.onopen = socket.onmessage = socket.onclose = null;

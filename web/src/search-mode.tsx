@@ -133,7 +133,7 @@ export function SearchBar({
   const input = useRef<HTMLInputElement>(null);
   const [filled, setFilled] = useState(false);
   useLayoutEffect(() => {
-    // As a property (newer browsers), Preact would set the string "off" as
+    // Where `autocorrect` is a boolean property, Preact would set "off" as
     // `true`.
     input.current!.setAttribute("autocorrect", "off");
     input.current!.focus();

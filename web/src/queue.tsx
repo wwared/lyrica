@@ -22,13 +22,15 @@ import type { Command } from "./ws";
 const SETTLE_MS = 150;
 // Auto-centring resumes this long after the last scroll by the user.
 const RESUME_MS = 15_000;
-// Faster, rows cross the list before their covers could arrive.
+// Above this, rows cross the list before their covers could arrive, so
+// probing waits.
 const AHEAD_ROWS_PER_S = 100;
 // Scroll speed is measured over this long.
 const SPEED_MS = 100;
 // Scrolling passes run every frame: none for this long means stopped.
 const STOPPED_MS = 50;
-// A 580 px list's groups, so the visible ones never wait.
+// Probes in flight: one per row of a 580 px list, so the visible groups never
+// wait.
 const AHEAD_PROBES = 12;
 // Search mode: empty space after the last row, so it rests above the pill
 // (`.search-pill`: 46 px tall, 10 px from the list's bottom).

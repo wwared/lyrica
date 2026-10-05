@@ -377,7 +377,7 @@ struct Bracket {
     lo: u32,
     /// Its last match's position.
     lo_last: u32,
-    /// First chunk known to start after the first match after `from`, if any.
+    /// Earliest chunk known to hold no match at or before `from`.
     hi: u32,
     hi_kind: Hi,
     /// Whether the last probe halved `hi − lo`; else the next one bisects.

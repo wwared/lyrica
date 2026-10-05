@@ -1,4 +1,4 @@
-//! Search queries (`architecture.md` → "Search" → "Query language").
+//! Search queries (`docs/architecture.md` → "Search" → "Query language").
 
 use std::{cmp::Reverse, fmt};
 
@@ -31,8 +31,10 @@ const FIELDS: [(&str, Tag); 6] = [
     ("any", Tag::Any),
 ];
 
-/// In front of every user regex (user decision): Unicode `\w`, `\b` and
-/// friends; a match limit, since MPD can't cancel a running scan.
+/// In front of every user regex: Unicode `\w`, `\b` and friends; a match
+/// limit, since MPD can't cancel a running scan. The user's own `(*…)` verbs
+/// follow it, so their `(*LIMIT_MATCH=n)` wins (PCRE2 takes the last). MPD's
+/// regex error offsets, shown as-is, count these 32 characters.
 const USER_REGEX: &str = "(*UTF)(*UCP)(*LIMIT_MATCH=10000)";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,8 +120,9 @@ impl Term {
     }
 }
 
-/// Regex matching `text` after `anchor`. `(*UTF)` gives Unicode case folding;
-/// a backslash before an ASCII alphanumeric would start an escape sequence.
+/// Regex matching `text` after `anchor`: MPD runs regexes 10× faster than
+/// `contains`. `(*UTF)` gives Unicode case folding; a backslash before an
+/// ASCII alphanumeric would start an escape sequence.
 fn literal(anchor: &str, text: &str) -> String {
     const UTF: &str = "(*UTF)";
     let mut pattern = String::with_capacity(UTF.len() + anchor.len() + 2 * text.len());
@@ -590,7 +593,7 @@ mod tests {
         assert_eq!(text("a—b"), term_text("a—b"));
     }
 
-    /// `architecture.md` → "Query language", the example table.
+    /// `docs/architecture.md` → "Search" → "Query language", the example table.
     #[test]
     fn docs_examples() {
         let user = "(*UTF)(*UCP)(*LIMIT_MATCH=10000)";
