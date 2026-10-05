@@ -111,6 +111,7 @@ export function QueueList({
     // User input on the list stops auto-centring until `resume` fires.
     let paused = false;
     let resume = 0;
+    let unhalt = 0;
     const place = (next: Placement) => {
       v.anchor = next.anchor;
       v.scrollTop = next.scrollTop;
@@ -215,7 +216,20 @@ export function QueueList({
       clearTimeout(settle);
       settle = setTimeout(settled, SETTLE_MS);
     };
+    // iOS keeps a fling going through `scrollTop` writes; a painted frame with
+    // `overflow: hidden` ends it. Two frames: the first runs before this one's
+    // paint.
+    const halt = () => {
+      el.style.overflowY = "hidden";
+      cancelAnimationFrame(unhalt);
+      unhalt = requestAnimationFrame(() => {
+        unhalt = requestAnimationFrame(() => {
+          el.style.overflowY = "";
+        });
+      });
+    };
     const recentre = () => {
+      halt();
       paused = false;
       clearTimeout(resume);
       centred();
@@ -327,6 +341,7 @@ export function QueueList({
       clearTimeout(settle);
       clearTimeout(slowed);
       clearTimeout(resume);
+      cancelAnimationFrame(unhalt);
       resized.disconnect();
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("touchstart", onTouchStart);
