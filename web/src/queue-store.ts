@@ -9,6 +9,8 @@ export type Entry = {
   track: number | null;
   duration: number | null;
   folder: string | null;
+  /** Whether it starts an album group (the server's rule). */
+  start: boolean;
 };
 
 /** A request for the entries at positions `start` to `end - 1`. */
@@ -60,7 +62,7 @@ export type QueueStore = {
   subscribe(listener: Listener): () => void;
 };
 
-/** Positions per block. Requests add the entry before the block. */
+/** Positions per block. */
 export const BLOCK = 100;
 /** Rows kept beyond the visible ones on each side. */
 export const KEEP_ROWS = 1000;
@@ -77,13 +79,9 @@ export function queueStore(
   let shown = false;
   let first = 0;
   let last = 0;
-  // Block → the entries from `start` (one before the block, but in block 0),
-  // and their queue version; `[]` when MPD rejected the range. Older versions
-  // are only kept in view, shown until replaced.
-  const blocks = new Map<
-    number,
-    { version: number; start: number; songs: Entry[] }
-  >();
+  // Block → its entries and their queue version; `[]` when MPD rejected the
+  // range. Older versions are only kept in view, shown until replaced.
+  const blocks = new Map<number, { version: number; songs: Entry[] }>();
   // Replies to these still count against the limit, even for an older version.
   let inFlight: { version: number; block: number }[] = [];
   // Blocks waiting to be retried after a `null` reply.
@@ -130,11 +128,10 @@ export function queueStore(
       if (inFlight.some((r) => r.version === version && r.block === block))
         continue;
       inFlight.push({ version, block });
-      const start = Math.max(0, block * BLOCK - 1);
       send({
         type: "queue",
         version,
-        start,
+        start: block * BLOCK,
         end: Math.min(block * BLOCK + BLOCK, length),
       });
     }
@@ -158,7 +155,7 @@ export function queueStore(
       plan();
     },
     reply(version, start, songs) {
-      const block = Math.ceil(start / BLOCK);
+      const block = start / BLOCK;
       const i = inFlight.findIndex(
         (r) => r.version === version && r.block === block,
       );
@@ -174,12 +171,9 @@ export function queueStore(
           );
         } else {
           const replaced = blocks.has(block);
-          blocks.set(block, { version, start, songs });
+          blocks.set(block, { version, songs });
           if (songs.length > 0 || replaced)
-            listener?.stored(
-              block * BLOCK,
-              songs.length > 0 ? start + songs.length : block * BLOCK + BLOCK,
-            );
+            listener?.stored(start, start + (songs.length || BLOCK));
         }
       }
       plan();
@@ -214,21 +208,10 @@ export function queueStore(
       return shown;
     },
     entry(position) {
-      const b = served(position);
-      return b?.songs[position - b.start];
+      return served(position)?.songs[position % BLOCK];
     },
     starts(position) {
-      const b = served(position);
-      if (b === undefined) return undefined;
-      const entry = b.songs[position - b.start];
-      if (entry === undefined) return undefined;
-      const before = b.songs[position - b.start - 1];
-      return (
-        before === undefined ||
-        entry.album === null ||
-        entry.album !== before.album ||
-        entry.folder !== before.folder
-      );
+      return served(position)?.songs[position % BLOCK]?.start;
     },
     subscribe(next) {
       listener = next;

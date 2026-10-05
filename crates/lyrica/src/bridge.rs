@@ -3,7 +3,6 @@
 
 use std::{
     convert::Infallible,
-    ops::Range,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -134,6 +133,8 @@ struct Entry {
     track: Option<u32>,
     duration: Option<f64>,
     folder: Option<String>,
+    /// Whether it starts an album group; set by `entries`.
+    start: bool,
 }
 
 impl Entry {
@@ -146,6 +147,7 @@ impl Entry {
             duration: song.duration.map(|d| d.as_secs_f64()),
             folder: music_url.and_then(|m| folder(m, &song.file)),
             title: title(song),
+            start: true,
         }
     }
 }
@@ -258,10 +260,6 @@ impl TryFrom<RawWindow> for Window {
 }
 
 impl Window {
-    fn range(self) -> Range<u32> {
-        self.start..self.end
-    }
-
     fn reply(self, songs: Option<Vec<Entry>>) -> String {
         let message = ServerMessage::Queue {
             version: self.version,
@@ -559,17 +557,14 @@ async fn serve_window(
     music_url: Option<&str>,
     window: Window,
 ) -> Option<Vec<Entry>> {
+    // The entry before the window tells whether its first one starts a group.
+    let from = window.start.saturating_sub(1);
     match execute(mpd, client, async move |c| {
-        c.queue_range(window.range()).await
+        c.queue_range(from..window.end).await
     })
     .await
     {
-        Ok(songs) => Some(
-            songs
-                .into_iter()
-                .map(|s| Entry::new(s, music_url))
-                .collect(),
-        ),
+        Ok(songs) => Some(entries(songs, from < window.start, music_url)),
         // The queue changed under the client; its state push follows.
         Err(Error::Ack(ack)) => {
             tracing::debug!("{window:?}: {ack}");
@@ -580,6 +575,27 @@ async fn serve_window(
             None
         }
     }
+}
+
+/// Converts consecutive queue `songs`, flagging group starts; with `leading`,
+/// the first one only decides the next one's flag and is dropped.
+fn entries(songs: Vec<Song>, leading: bool, music_url: Option<&str>) -> Vec<Entry> {
+    let mut songs = songs.into_iter().map(|s| Entry::new(s, music_url));
+    let before = if leading { songs.next() } else { None };
+    let mut entries: Vec<Entry> = Vec::with_capacity(songs.len());
+    for mut entry in songs {
+        let previous = entries.last().or(before.as_ref());
+        entry.start = previous.is_none_or(|p| !same_group(p, &entry));
+        entries.push(entry);
+    }
+    entries
+}
+
+/// Whether `b`, right after `a` in the queue, is in `a`'s album group: the one
+/// rule behind the list's separators and covers (`docs/architecture.md` →
+/// "Album grouping").
+fn same_group(a: &Entry, b: &Entry) -> bool {
+    a.album.is_some() && a.album == b.album && a.folder == b.folder
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -800,6 +816,52 @@ mod tests {
         assert_eq!(album(&mut song("http://radio/a/stream")), None);
     }
 
+    #[test]
+    fn group_starts_flagged_from_the_entry_before() {
+        let tagged = |file: &str, album: &str| Song {
+            album: Some(album.into()),
+            ..song(file)
+        };
+        let flags = |songs: Vec<Song>, leading, music_url| -> Vec<bool> {
+            entries(songs, leading, music_url)
+                .iter()
+                .map(|e| e.start)
+                .collect()
+        };
+        let m = Some("https://m/");
+        let album = || {
+            vec![
+                tagged("x/1.flac", "a"),
+                tagged("x/2.flac", "a"),
+                tagged("y/1.flac", "a"),
+                tagged("y/2.flac", "b"),
+                song("y/3.flac"),
+            ]
+        };
+        // From position 0: same album and folder continue; another folder,
+        // another album or the folder-name fallback start a group.
+        assert_eq!(flags(album(), false, m), [true, false, true, true, true]);
+        // Inside a group, the leading entry is dropped.
+        assert_eq!(flags(album(), true, m), [false, true, true, true]);
+        // At a group start.
+        assert_eq!(flags(album()[1..].to_vec(), true, m), [true, true, true]);
+        // Without `--music-url`, by album name alone.
+        assert_eq!(
+            flags(album(), false, None),
+            [true, false, false, true, true]
+        );
+        // No album (top of the music directory, streams): a group each.
+        let loose = vec![
+            song("1.flac"),
+            song("2.flac"),
+            song("http://r/s"),
+            song("http://r/s"),
+        ];
+        assert_eq!(flags(loose, true, m), [true, true, true]);
+        // Only the leading entry (the window starts at the queue's end).
+        assert!(entries(vec![song("x/1.flac")], true, m).is_empty());
+    }
+
     async fn accept(listener: &TcpListener) -> BufReader<tokio::net::TcpStream> {
         let (stream, _) = listener.accept().await.unwrap();
         let mut stream = BufReader::new(stream);
@@ -912,9 +974,12 @@ mod tests {
                          duration: 61.5\nPos: 0\nId: 9\n\
                          file: d/e.flac\nAlbumArtist: aa\nPos: 1\nId: 4\n";
             reply(&mut s, "playlistinfo \"0:2\"\n", songs).await;
+            let same = "file: a/b/c.flac\nAlbum: al\nPos: 4\nId: 2\n\
+                        file: a/b/d.flac\nAlbum: al\nPos: 5\nId: 3\n";
+            reply(&mut s, "playlistinfo \"4:6\"\n", same).await;
             let mut line = String::new();
             s.read_line(&mut line).await.unwrap();
-            assert_eq!(line, "playlistinfo \"7:207\"\n");
+            assert_eq!(line, "playlistinfo \"6:207\"\n");
             s.write_all(b"ACK [2@0] {playlistinfo} Bad song index\n")
                 .await
                 .unwrap();
@@ -941,12 +1006,20 @@ mod tests {
             window(0, 2).await,
             serde_json::json!({"type": "queue", "version": 5, "start": 0, "songs": [
                 {"id": 9, "title": "t", "artist": "ar", "album": "al", "track": 3,
-                 "duration": 61.5, "folder": "https://m/a/b/"},
+                 "duration": 61.5, "folder": "https://m/a/b/", "start": true},
                 {"id": 4, "title": "e.flac", "artist": "aa", "album": "d", "track": null,
-                 "duration": null, "folder": "https://m/d/"},
+                 "duration": null, "folder": "https://m/d/", "start": true},
             ]})
         );
-        // Empty: answered without asking MPD, whose next line must be 7:207.
+        // Read with the entry before it, which is left out.
+        assert_eq!(
+            window(5, 6).await,
+            serde_json::json!({"type": "queue", "version": 5, "start": 5, "songs": [
+                {"id": 3, "title": "d.flac", "artist": null, "album": "al", "track": null,
+                 "duration": null, "folder": "https://m/a/b/", "start": false},
+            ]})
+        );
+        // Empty: answered without asking MPD, whose next line must be 6:207.
         assert_eq!(window(5, 5).await["songs"], serde_json::json!([]));
         // MPD rejects the range: nothing there.
         assert_eq!(window(7, 100_000).await["songs"], serde_json::json!([]));
