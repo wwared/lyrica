@@ -71,6 +71,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::spawn(bridge::follow(mpd.clone(), music_url.clone(), snapshot_tx));
     tokio::spawn(bridge::execute_commands(
         mpd.clone(),
+        music_url.clone(),
         job_rx,
         snapshots.clone(),
     ));

@@ -17,6 +17,8 @@ const MAX_BACKOFF: Duration = Duration::from_secs(10);
 /// Most entries per window: ~0.8 ms of MPD time (`docs/architecture.md` →
 /// "Queue measurements").
 const MAX_WINDOW: u32 = 200;
+/// Entries read per step of `group_start`'s walk back through the queue.
+const WALK_WINDOW: u32 = 100;
 /// Escaped in URL path segments: everything but RFC 3986 unreserved characters.
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -200,7 +202,8 @@ impl Snapshot {
 
 /// Client → server message. `random`, `repeat` and `single` toggle the mode;
 /// `volume` sets MPD's volume; `seek` jumps to `position` seconds in the
-/// current song; `playid` plays the queue entry with that id.
+/// current song; `playid` plays the queue entry with that id; `albumstart`
+/// plays the current song's album group in order from its first entry.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Command {
@@ -220,6 +223,7 @@ pub enum Command {
     PlayId {
         id: u32,
     },
+    AlbumStart,
 }
 
 fn seconds<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
@@ -437,9 +441,13 @@ fn folder(music_url: &str, file: &str) -> Option<String> {
 /// dedicated connection.
 pub async fn execute_commands(
     mpd: Arc<Mpd>,
+    music_url: Option<String>,
     mut jobs: mpsc::Receiver<Job>,
     snapshots: watch::Receiver<Snapshot>,
 ) {
+    // Shared, not borrowed, by each command's closure: a borrow fails rustc's
+    // higher-ranked `Send` check on the spawned task.
+    let music_url: Option<Arc<str>> = music_url.map(Into::into);
     let mut client = None;
     while let Some(job) = jobs.recv().await {
         match job {
@@ -449,8 +457,11 @@ pub async fn execute_commands(
                     tracing::info!("MPD offline; dropping {command:?}");
                     continue;
                 };
-                if let Err(error) =
-                    execute(&mpd, &mut client, async move |c| action.run(c).await).await
+                let music_url = music_url.clone();
+                if let Err(error) = execute(&mpd, &mut client, async move |c| {
+                    action.run(c, music_url.as_deref()).await
+                })
+                .await
                 {
                     tracing::warn!("{command:?}: {error}");
                 }
@@ -610,6 +621,7 @@ enum Action {
     Volume(u8),
     Seek(Duration),
     PlayId(u32),
+    AlbumStart,
 }
 
 impl Action {
@@ -630,10 +642,12 @@ impl Action {
             (Command::Volume { volume }, _) => Action::Volume(volume),
             (Command::Seek { position }, _) => Action::Seek(position),
             (Command::PlayId { id }, _) => Action::PlayId(id),
+            (Command::AlbumStart, _) => Action::AlbumStart,
         })
     }
 
-    async fn run(self, client: &mut Client) -> Result<()> {
+    /// `music_url` as given to `serve_reads`, so groups match the list's.
+    async fn run(self, client: &mut Client, music_url: Option<&str>) -> Result<()> {
         match self {
             Action::Play => client.play().await,
             Action::Pause(pause) => client.pause(pause).await,
@@ -645,8 +659,47 @@ impl Action {
             Action::Volume(volume) => client.set_volume(volume).await,
             Action::Seek(position) => client.seek_current(position).await,
             Action::PlayId(id) => client.play_id(id).await,
+            Action::AlbumStart => album_start(client, music_url).await,
         }
     }
+}
+
+/// Turns random and single off and plays the current song's album group from
+/// its first entry; a playing first entry carries on (`docs/architecture.md`
+/// → "Queue actions").
+async fn album_start(client: &mut Client, music_url: Option<&str>) -> Result<()> {
+    let status = client.status().await?;
+    let Some(position) = status.song else {
+        return Ok(());
+    };
+    let first = group_start(client, music_url, position).await?;
+    let carry_on = status.song_id == Some(first) && status.state == State::Play;
+    client.play_in_order((!carry_on).then_some(first)).await
+}
+
+/// Id of the first entry in the album group of the entry at `position`.
+async fn group_start(client: &mut Client, music_url: Option<&str>, position: u32) -> Result<u32> {
+    let mut end = position + 1;
+    // The earliest entry known to be in the group.
+    let mut first: Option<Entry> = None;
+    'walk: loop {
+        let start = end.saturating_sub(WALK_WINDOW);
+        let songs = client.queue_range(start..end).await?;
+        for song in songs.into_iter().rev() {
+            let entry = Entry::new(song, music_url);
+            if first.as_ref().is_some_and(|f| !same_group(&entry, f)) {
+                break 'walk;
+            }
+            first = Some(entry);
+        }
+        if start == 0 {
+            break;
+        }
+        end = start;
+    }
+    first
+        .and_then(|f| f.id)
+        .ok_or_else(|| Error::Protocol("album group start without an Id".into()))
 }
 
 /// Runs `run`, reconnecting first if `client` is gone. A reused connection
@@ -1109,7 +1162,7 @@ mod tests {
         });
         let (snapshot_tx, snapshots) = watch::channel(Snapshot::offline());
         let (jobs, job_rx) = mpsc::channel(4);
-        tokio::spawn(execute_commands(mpd, job_rx, snapshots));
+        tokio::spawn(execute_commands(mpd, None, job_rx, snapshots));
         let (reply_tx, mut replies) = mpsc::unbounded_channel();
         let mut load = async |name: &str| {
             let job = Job::Load {
@@ -1132,6 +1185,118 @@ mod tests {
             load("big").await,
             loaded("big", Some("Playlist is too large"))
         );
+        server.await.unwrap();
+    }
+
+    /// `playlistinfo` reply for positions `range`: `tags(n)` gives the lines
+    /// before `Pos`; the id is `n + 1000`.
+    fn listing(range: std::ops::Range<u32>, tags: impl Fn(u32) -> String) -> String {
+        range
+            .map(|n| format!("{}Pos: {n}\nId: {}\n", tags(n), n + 1000))
+            .collect()
+    }
+
+    /// The id `group_start` finds from `position` in a queue tagged by `tags`,
+    /// checking it reads windows starting at `starts`, each ending where the
+    /// one before starts, the first at `position + 1`.
+    async fn walk(tags: fn(u32) -> String, position: u32, starts: &'static [u32]) -> u32 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut s = accept(&listener).await;
+            let mut end = position + 1;
+            for &start in starts {
+                let request = format!("playlistinfo \"{start}:{end}\"\n");
+                reply(&mut s, &request, &listing(start..end, tags)).await;
+                end = start;
+            }
+        });
+        let mut client = Client::connect(addr).await.unwrap();
+        let first = group_start(&mut client, None, position).await.unwrap();
+        drop(client);
+        server.await.unwrap();
+        first
+    }
+
+    #[tokio::test]
+    async fn group_start_walks_back_a_window_at_a_time() {
+        assert_eq!(walk(|n| format!("file: a/{n}.flac\n"), 5, &[0]).await, 1000);
+        // At a window's first entry: only the window before tells.
+        let split = |n| format!("file: {}/{n}.flac\n", if n < 51 { "a" } else { "b" });
+        assert_eq!(walk(split, 150, &[51, 0]).await, 1051);
+        let split = |n| format!("file: {}/{n}.flac\n", if n < 150 { "a" } else { "b" });
+        assert_eq!(walk(split, 150, &[51]).await, 1150);
+        let split = |n| format!("file: {}/{n}.flac\n", if n < 120 { "a" } else { "b" });
+        assert_eq!(walk(split, 350, &[251, 151, 51]).await, 1120);
+        // No album: a group of its own, even among others without one.
+        assert_eq!(walk(|n| format!("file: {n}.flac\n"), 5, &[0]).await, 1005);
+    }
+
+    #[tokio::test]
+    async fn album_start_plays_the_group_from_its_first_entry() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mpd = Arc::new(Mpd {
+            addr: listener.local_addr().unwrap().to_string(),
+            password: None,
+        });
+        // Album `al` in folders x (0–2) and y (3–): two groups with `--music-url`.
+        let tags = |n| {
+            format!(
+                "file: {}/{n}.flac\nAlbum: al\n",
+                if n < 3 { "x" } else { "y" }
+            )
+        };
+        let server = tokio::spawn(async move {
+            let mut s = accept(&listener).await;
+            let status = |state: &str, song: Option<u32>| {
+                let song = song
+                    .map(|n| format!("song: {n}\nsongid: {}\n", n + 1000))
+                    .unwrap_or_default();
+                format!("state: {state}\n{song}playlist: 1\nplaylistlength: 10\n")
+            };
+            let list = async |s: &mut BufReader<tokio::net::TcpStream>, id: Option<u32>| {
+                let playid = id
+                    .map(|id| format!("playid \"{id}\"\n"))
+                    .unwrap_or_default();
+                let mut lines = String::new();
+                for _ in 0..4 + usize::from(id.is_some()) {
+                    s.read_line(&mut lines).await.unwrap();
+                }
+                assert_eq!(
+                    lines,
+                    format!(
+                        "command_list_begin\nrandom \"0\"\nsingle \"0\"\n{playid}command_list_end\n"
+                    )
+                );
+                s.write_all(b"OK\n").await.unwrap();
+            };
+            // No current song: the next line is the following status.
+            reply(&mut s, "status\n", &status("stop", None)).await;
+            // The playing first entry carries on; otherwise it plays from its start.
+            let cases = [
+                ("play", 3, None),
+                ("pause", 3, Some(1003)),
+                ("stop", 3, Some(1003)),
+                ("play", 5, Some(1003)),
+            ];
+            for (state, song, id) in cases {
+                reply(&mut s, "status\n", &status(state, Some(song))).await;
+                let request = format!("playlistinfo \"0:{}\"\n", song + 1);
+                reply(&mut s, &request, &listing(0..song + 1, tags)).await;
+                list(&mut s, id).await;
+            }
+        });
+        let playing = Snapshot {
+            state: PlayState::Play,
+            ..Snapshot::offline()
+        };
+        let (_snapshot_tx, snapshots) = watch::channel(playing);
+        let (jobs, job_rx) = mpsc::channel(8);
+        let music_url = Some("https://m/".into());
+        tokio::spawn(execute_commands(mpd, music_url, job_rx, snapshots));
+        for _ in 0..5 {
+            jobs.send(Job::Command(Command::AlbumStart)).await.unwrap();
+        }
         server.await.unwrap();
     }
 }

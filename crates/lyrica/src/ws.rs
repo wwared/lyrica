@@ -174,6 +174,10 @@ mod tests {
         );
         assert!(parse(r#"{"type":"queue","version":3,"start":10,"end":9}"#).is_err());
         assert_eq!(parse(r#"{"type":"next"}"#).unwrap(), "Command(Next)");
+        assert_eq!(
+            parse(r#"{"type":"albumstart"}"#).unwrap(),
+            "Command(AlbumStart)"
+        );
         assert_eq!(parse(r#"{"type":"playlists"}"#).unwrap(), "Playlists");
         assert_eq!(
             parse(r#"{"type":"load","name":"a \"b\""}"#).unwrap(),
