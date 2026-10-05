@@ -1,8 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { Icon } from "./icon";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import { CLOSE, Icon } from "./icon";
 import { Marquee } from "./marquee";
-
-const TOAST_MS = 3000;
 
 type Step =
   | { kind: "idle" }
@@ -22,17 +20,19 @@ export function Playlists({
   list,
   load,
   onLoaded,
+  toast,
 }: {
   disabled: boolean;
   list: () => Promise<string[] | null>;
   /** `null` on success, or why it failed. */
   load: (name: string) => Promise<string | null>;
   onLoaded: () => void;
+  /** Shows `text` in the toolbar's toast; `null` clears it. */
+  toast: (text: string | null) => void;
 }) {
   const [step, setStep] = useState<Step>(IDLE);
   // Taps can come faster than renders.
   const busy = useRef(false);
-  const [toast, setToast] = useState<{ text: string } | null>(null);
   const choose = useRef<HTMLDialogElement>(null);
   const loading = useRef<HTMLDialogElement>(null);
   const failed = useRef<HTMLDialogElement>(null);
@@ -52,16 +52,10 @@ export function Playlists({
     busy.current = step.kind !== "idle";
   }, [step.kind]);
 
-  useEffect(() => {
-    if (toast === null) return;
-    const timer = setTimeout(() => setToast(null), TOAST_MS);
-    return () => clearTimeout(timer);
-  }, [toast]);
-
   const open = async () => {
     if (busy.current) return;
     busy.current = true;
-    setToast(null);
+    toast(null);
     setStep({ kind: "listing" });
     const names = await list();
     if (names !== null && names.length > 0) {
@@ -69,9 +63,7 @@ export function Playlists({
       return;
     }
     setStep(IDLE);
-    setToast({
-      text: names === null ? "Couldn't list playlists" : "No playlists found",
-    });
+    toast(names === null ? "Couldn't list playlists" : "No playlists found");
   };
 
   const start = async (name: string) => {
@@ -97,9 +89,6 @@ export function Playlists({
       >
         <Icon path={PLAYLISTS} />
       </button>
-      <p class="toast" role="status">
-        {toast?.text}
-      </p>
       <dialog
         class="dialog"
         ref={choose}
@@ -181,8 +170,6 @@ export function Playlists({
   );
 }
 
-// Material Icons (Apache 2.0): queue_music, close.
+// Material Icons (Apache 2.0): queue_music.
 const PLAYLISTS =
   "M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z";
-const CLOSE =
-  "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z";

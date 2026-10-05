@@ -46,6 +46,8 @@ const listen = (overrides: Partial<Listener>): Listener => ({
   hiding() {},
   top() {},
   recentre() {},
+  searched() {},
+  reveal() {},
   ...overrides,
 });
 

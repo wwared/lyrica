@@ -14,6 +14,7 @@ import { Playlists } from "./playlists";
 import { formatTime, position } from "./progress";
 import { QueueList } from "./queue";
 import { queueStore } from "./queue-store";
+import { SEARCH, SearchBar, SearchPill, useSearchMode } from "./search-mode";
 import { useStream } from "./stream";
 import { Volume } from "./volume";
 import { useWakeLock } from "./wake";
@@ -25,23 +26,40 @@ import {
   type Snapshot,
 } from "./ws";
 
+const TOAST_MS = 3000;
+
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   // One for the app's lifetime, so it never invalidates the list's memo.
   const [store] = useState(queueStore);
   const connection = useRef<Connection | null>(null);
+  // The toolbar's, shared by the playlists button and search mode; an object,
+  // so the same text shown again restarts the timer.
+  const [toast, setToast] = useState<{ text: string } | null>(null);
+  const [showToast] = useState(
+    () => (text: string | null) => setToast(text === null ? null : { text }),
+  );
+  useEffect(() => {
+    if (toast === null) return;
+    const timer = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  const search = useSearchMode(store, connection, showToast);
   useEffect(() => {
     const c = connect(
-      setSnapshot,
+      (snapshot) => {
+        search.queue(snapshot.queue);
+        setSnapshot(snapshot);
+      },
       (config) => setStreamUrl(config.stream),
       store,
+      search.reply,
     );
     connection.current = c;
     return () => c.close();
   }, []);
   useWakeLock();
-
   // Stable, so passing them never invalidates the list's or toolbar's memo.
   const [send] = useState(
     () => (command: Command) => connection.current?.send(command),
@@ -74,7 +92,11 @@ export function App() {
   });
   const [mini, setMini] = useState(false);
   // Layout effect: opening centres the list before the fade-in's first frame.
-  useLayoutEffect(() => store.show(mini), [mini]);
+  // Full mode leaves search mode, after hiding the list: no centring then.
+  useLayoutEffect(() => {
+    store.show(mini);
+    if (!mini) search.leave();
+  }, [mini]);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const nowPlaying = useRef<HTMLElement>(null);
   const capture = useFlip(nowPlaying, mini);
@@ -92,6 +114,7 @@ export function App() {
         list={list}
         load={load}
         onLoaded={() => store.top()}
+        toast={showToast}
       />
     ),
     [disabled],
@@ -150,23 +173,46 @@ export function App() {
     <main class={mini ? "app mini" : "app"}>
       <section class="queue" aria-hidden={!mini}>
         <div class="toolbar">
-          {playlists}
-          {playHere()}
-          {volume(true)}
-          {modes()}
-          <button
-            class="album-start"
-            aria-label="Play album from the start"
-            disabled={disabled || snapshot.queue?.id == null}
-            onClick={() => {
-              send({ type: "albumstart" });
-              store.recentre();
-            }}
-          >
-            <Icon path={ALBUM} />
-          </button>
+          {search.searching ? (
+            <SearchBar onClose={search.leave} onSubmit={search.submit} />
+          ) : (
+            <>
+              {playlists}
+              <button
+                class="search"
+                aria-label="Search the queue"
+                disabled={disabled}
+                onClick={() => {
+                  setVolumeOpen(false);
+                  search.enter();
+                }}
+              >
+                <Icon path={SEARCH} />
+              </button>
+              {playHere()}
+              {volume(true)}
+              {modes()}
+              <button
+                class="album-start"
+                aria-label="Play album from the start"
+                disabled={disabled || snapshot.queue?.id == null}
+                onClick={() => {
+                  send({ type: "albumstart" });
+                  store.recentre();
+                }}
+              >
+                <Icon path={ALBUM} />
+              </button>
+            </>
+          )}
+          <p class="toast" role="status">
+            {toast?.text}
+          </p>
         </div>
         {queueList}
+        {search.searching && (
+          <SearchPill search={search.search} onStep={search.step} />
+        )}
       </section>
       <section class="now-playing" ref={nowPlaying}>
         <Art

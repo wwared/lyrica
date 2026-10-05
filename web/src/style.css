@@ -15,12 +15,14 @@
 
 :root {
   color-scheme: dark;
-  /* Gruvbox dark: bg0, bg0_s, fg1, fg4, bg2, then accents (orange is the
-     dark one, too dim for small text; the rest bright). */
+  /* Gruvbox dark: bg0, bg0_s, bg1, fg1, fg3, fg4, bg2, then accents (orange
+     is the dark one, too dim for small text; the rest bright). */
   --bg: #282828;
   --bg-soft: #32302f;
+  --bg1: #3c3836;
   --fg: #ebdbb2;
   --muted: #a89984;
+  --fg3: #bdae93;
   --track: #504945;
   --yellow: #fabd2f;
   --orange: #d65d0e;
@@ -94,8 +96,10 @@ body {
 
 /* Above the now-playing section in both modes, so its geometry never changes
    on a switch; only shown in mini mode. `visibility`, not `display`, so the
-   list keeps its size and scroll position while hidden. */
+   list keeps its size and scroll position while hidden. Positioned: holds
+   the search pill. */
 .queue {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -176,6 +180,100 @@ body {
 
 .toast:empty {
   visibility: hidden;
+}
+
+/* Search mode's toolbar: ✕, the input, 🔍. */
+.search-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 16 px: iOS zooms in on a focused input with less. Selectable, unlike the
+   rest of the app. */
+.search-bar input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--track);
+  border-radius: 18px;
+  background: var(--bg-soft);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.search-bar input:focus {
+  border-color: var(--muted);
+}
+
+/* ✕ leaves search mode; a clear button inside would look like it. */
+.search-bar input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Over the list's bottom edge, 46 px tall; the list leaves room for it after
+   its last row (PILL_ROOM_PX in queue.tsx). The count has a fixed width, so
+   the buttons never move under the finger. `bg0_s`: the spinner's inner
+   disc. */
+.search-pill {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--muted);
+  border-radius: 23px;
+  background: var(--bg-soft);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+  transform: translateX(-50%);
+}
+
+.search-pill button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--fg);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.search-pill button:active:not(:disabled) {
+  background: var(--track);
+}
+
+.search-pill button:disabled {
+  opacity: 0.5;
+}
+
+.search-pill svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+.search-count {
+  display: grid;
+  place-items: center;
+  width: 8rem;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* No padding: the content fills the box, so a click on the dialog itself is
@@ -487,6 +585,27 @@ body {
 
 .queue-row.current > * {
   color: var(--bright-orange);
+}
+
+/* Search mode. `bg1` alone barely differs from the `bg0_s` stripes, hence the
+   yellow edge. On `bg1` the muted texts take `fg3` (fg4 would be 4.2:1). */
+.queue-row.match {
+  background: var(--bg1);
+  box-shadow: inset 4px 0 var(--yellow);
+}
+
+.queue-row.match:not(.current) > :is(.queue-track, .queue-info, .queue-time) {
+  color: var(--fg3);
+}
+
+/* Like the playlists dialog's selection; over the current song's colour. */
+.queue-row.focused {
+  background: var(--track);
+  box-shadow: inset 4px 0 var(--yellow);
+}
+
+.queue-row.focused > * {
+  color: var(--yellow);
 }
 
 /* Pinned to the bottom, with fixed-height children, so nothing moves when the

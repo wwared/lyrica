@@ -96,18 +96,20 @@ export function reanchor(
 
 /**
  * Puts row `position`'s centre at the viewport's centre; near the queue's
- * ends the first or last row sits flush.
+ * ends the first or last row sits flush (the last one above `roomPx`, the
+ * empty space after it in search mode).
  */
 export function centre(
   position: number,
   viewportPx: number,
   length: number,
+  roomPx = 0,
 ): Placement {
   const offset = Math.max(
     0,
     Math.min(
       position * ROW_PX + ROW_PX / 2 - viewportPx / 2,
-      length * ROW_PX - viewportPx,
+      length * ROW_PX + roomPx - viewportPx,
     ),
   );
   const anchor = clampAnchor(
@@ -126,10 +128,11 @@ export function resize(
   scrollTop: number,
   viewportPx: number,
   length: number,
+  roomPx = 0,
 ): Placement {
   const offset = Math.min(
     anchor * ROW_PX + scrollTop,
-    Math.max(0, length * ROW_PX - viewportPx),
+    Math.max(0, length * ROW_PX + roomPx - viewportPx),
   );
   const next = clampAnchor(anchor, length);
   return { anchor: next, scrollTop: offset - next * ROW_PX };

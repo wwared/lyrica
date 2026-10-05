@@ -160,6 +160,17 @@ describe("centre", () => {
     expect(next.anchor).toBe(0);
     expect(middle(next)).toBe(3000 * ROW_PX + ROW_PX / 2);
   });
+
+  test("with room after the last row, the last rows centre or rest above it", () => {
+    const room = 64;
+    const last = centre(LONG - 1, VIEW, LONG, room);
+    expect(last.anchor).toBe(LONG - SPACE_ROWS);
+    expect(last.scrollTop).toBe(maxScrollTop(LONG) + room);
+    expect(middle(centre(LONG - 6, VIEW, LONG, room))).toBe(
+      (LONG - 6) * ROW_PX + ROW_PX / 2,
+    );
+    expect(centre(5, VIEW, 8, room)).toEqual({ anchor: 0, scrollTop: 0 });
+  });
 });
 
 describe("resize", () => {
@@ -195,6 +206,17 @@ describe("resize", () => {
       anchor: 0,
       scrollTop: 15_000 * ROW_PX,
     });
+  });
+
+  test("keeps an offset inside the room after the last row", () => {
+    const room = 64;
+    const end = maxScrollTop(LONG) + room;
+    expect(resize(LONG - SPACE_ROWS, end, VIEW, LONG, room).scrollTop).toBe(
+      end,
+    );
+    expect(resize(LONG - SPACE_ROWS, end, VIEW, LONG).scrollTop).toBe(
+      maxScrollTop(LONG),
+    );
   });
 
   test("an empty queue puts everything at zero", () => {

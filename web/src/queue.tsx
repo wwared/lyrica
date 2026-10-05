@@ -30,6 +30,9 @@ const SPEED_MS = 100;
 const STOPPED_MS = 50;
 // A 580 px list's groups, so the visible ones never wait.
 const AHEAD_PROBES = 12;
+// Search mode: empty space after the last row, so it rests above the pill
+// (`.search-pill`: 46 px tall, 10 px from the list's bottom).
+const PILL_ROOM_PX = 64;
 
 /**
  * The queue's virtual list (architecture.md → "Live queue"). Scroll state
@@ -63,12 +66,16 @@ export function QueueList({
     // Written in the layout effect, together with the anchor it belongs to.
     pendingScrollTop: null as number | null,
   }).current;
+  const room = () => (store.searching === null ? 0 : PILL_ROOM_PX);
   // iOS's rubber band reports positions beyond the space's ends; there are no
   // rows there.
   const scrolled = (el: HTMLElement) =>
     Math.max(
       0,
-      Math.min(el.scrollTop, spaceRows(v.length) * ROW_PX - v.viewportPx),
+      Math.min(
+        el.scrollTop,
+        spaceRows(v.length) * ROW_PX + room() - v.viewportPx,
+      ),
     );
 
   const report = () => {
@@ -81,7 +88,7 @@ export function QueueList({
 
   if (length !== v.length) {
     const scrollTop = list.current ? scrolled(list.current) : 0;
-    const next = resize(v.anchor, scrollTop, v.viewportPx, length);
+    const next = resize(v.anchor, scrollTop, v.viewportPx, length, room());
     v.length = length;
     v.anchor = next.anchor;
     v.scrollTop = next.scrollTop;
@@ -117,15 +124,17 @@ export function QueueList({
     // deltas already in flight on top of a `scrollTop` write, up to two frames
     // late; while set, any scroll the user didn't make re-centres.
     let halting = false;
+    // Search mode: the match centred last, instead of the current song.
+    let revealed: number | null = null;
     const place = (next: Placement) => {
       v.anchor = next.anchor;
       v.scrollTop = next.scrollTop;
       v.pendingScrollTop = next.scrollTop;
     };
     const centred = () => {
-      const { position } = store.current;
+      const position = revealed ?? store.current.position;
       if (position === null) return;
-      place(centre(position, v.viewportPx, v.length));
+      place(centre(position, v.viewportPx, v.length, room()));
       // A jump, not scrolling.
       moves.length = 0;
     };
@@ -135,7 +144,9 @@ export function QueueList({
       if (v.moved || halting) {
         v.moved = false;
         v.stale = true;
-        if (store.shown && !paused) centred();
+        // Search mode holds auto-centring; a halt still keeps its row centred.
+        if (store.shown && !paused && (halting || store.searching === null))
+          centred();
       }
       report();
       const pool = poolSize(v.viewportPx, v.length);
@@ -236,6 +247,7 @@ export function QueueList({
       });
     };
     const recentre = () => {
+      revealed = null;
       halt();
       paused = false;
       clearTimeout(resume);
@@ -275,11 +287,32 @@ export function QueueList({
         render(0);
       },
       recentre,
+      searched(left) {
+        if (!left) {
+          // Matches and the room for the pill; replies come from the socket.
+          v.stale = true;
+          if (frame === 0) frame = requestAnimationFrame(pass);
+        } else if (store.shown) recentre();
+        else {
+          revealed = null;
+          paused = false;
+          clearTimeout(resume);
+          render(0);
+        }
+      },
+      reveal(position) {
+        revealed = position;
+        halt();
+        paused = false;
+        clearTimeout(resume);
+        centred();
+        render(0);
+      },
     });
     const resumed = () => {
       if (touches > 0) return;
       paused = false;
-      if (!store.shown) return;
+      if (!store.shown || store.searching !== null) return;
       centred();
       render(0);
     };
@@ -315,13 +348,17 @@ export function QueueList({
       if (paused) wait();
     };
     // No `click` follows a touch that scrolled or stopped a fling. The tap
-    // ends the pause its `touchstart` began, so the song change centres.
+    // ends the pause its `touchstart` began, so the song change centres
+    // (unless searching).
     const onClick = (e: MouseEvent) => {
       const row = (e.target as Element).closest(".queue-row");
       const entry = row && store.entry(Number(row.ariaPosInSet) - 1);
       if (!entry || entry.id === null) return;
       // `playid` would restart the current song.
-      if (entry.id === store.current.id) return recentre();
+      if (entry.id === store.current.id) {
+        if (store.searching === null) recentre();
+        return;
+      }
       paused = false;
       clearTimeout(resume);
       send({ type: "playid", id: entry.id });
@@ -370,6 +407,7 @@ export function QueueList({
   v.stale = false;
   const first = v.anchor + v.first;
   const currentId = store.current.id;
+  const searching = store.searching;
   const rows = [];
   // Full mode: the list keeps its rows, hidden; their marquees would still
   // cost a style update every frame.
@@ -384,6 +422,10 @@ export function QueueList({
     let className = position % 2 ? "queue-row odd" : "queue-row";
     if (currentId !== null && entry?.id === currentId) className += " current";
     if (position > 0 && store.starts(position)) className += " group";
+    if (searching !== null) {
+      if (position === searching.focused) className += " focused";
+      else if (searching.matches(position)) className += " match";
+    }
     rows.push(
       <div
         key={slot}
@@ -440,7 +482,7 @@ export function QueueList({
       <div
         class="queue-space"
         role="list"
-        style={{ height: `${spaceRows(length) * ROW_PX}px` }}
+        style={{ height: `${spaceRows(length) * ROW_PX + room()}px` }}
       >
         {rows}
         <div aria-hidden="true">{albums}</div>

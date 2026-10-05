@@ -1,4 +1,5 @@
 import type { Entry, QueueStore } from "./queue-store";
+import type { Reply as SearchReply, Request as SearchRequest } from "./search";
 
 export type PlayState = "play" | "pause" | "stop" | "offline";
 
@@ -65,6 +66,8 @@ export type Connection = {
   playlists(): Promise<string[] | null>;
   /** Replaces the queue with a stored playlist: `null`, or why it failed. */
   load(name: string): Promise<string | null>;
+  /** Search requests; `false` unless the socket is open. */
+  search(request: SearchRequest): boolean;
   close(): void;
 };
 
@@ -105,12 +108,14 @@ const RETRY_MS = 1000;
 
 /**
  * Keeps a socket to the server open, reconnecting on drops. Queue state and
- * entries go to `store`, outside `App`'s state.
+ * entries go to `store`, outside `App`'s state; search replies to `onSearch`,
+ * with `lost` on every close.
  */
 export function connect(
   onSnapshot: (snapshot: Snapshot) => void,
   onConfig: (config: Config) => void,
   store: QueueStore,
+  onSearch: (reply: SearchReply) => void,
 ): Connection {
   // Relative so it works under a reverse-proxy path prefix.
   const url = new URL("ws", location.href);
@@ -134,6 +139,7 @@ export function connect(
       else if ("songs" in message)
         store.reply(message.version, message.start, message.songs);
       else if ("names" in message) pending.listed(message.names);
+      else if ("type" in message) onSearch(message);
       else if ("loaded" in message)
         pending.loaded(message.loaded, message.error);
       else {
@@ -143,6 +149,7 @@ export function connect(
     };
     socket.onclose = () => {
       pending.lost();
+      onSearch({ type: "lost" });
       store.state(null);
       onSnapshot({
         state: "offline",
@@ -169,6 +176,7 @@ export function connect(
     socket.onopen = socket.onmessage = socket.onclose = null;
     socket.close();
     pending.lost();
+    onSearch({ type: "lost" });
   };
 
   // iOS suspends hidden pages, leaving the socket dead or silently stale and the
@@ -199,6 +207,11 @@ export function connect(
       socket.send(JSON.stringify({ type: "load", name }));
       return error;
     },
+    search(request) {
+      if (!isOpen()) return false;
+      socket.send(JSON.stringify(request));
+      return true;
+    },
     close() {
       document.removeEventListener("visibilitychange", onVisibility);
       shutdown();
@@ -213,7 +226,7 @@ type Loaded = { loaded: string; error: string | null };
 function parse(
   data: unknown,
   at: number,
-): Snapshot | Config | Reply | Listing | Loaded | undefined {
+): Snapshot | Config | Reply | Listing | Loaded | SearchReply | undefined {
   if (typeof data !== "string") return;
   let message;
   try {
@@ -229,6 +242,14 @@ function parse(
   if (message?.type === "playlists") return { names: message.names };
   if (message?.type === "loaded")
     return { loaded: message.name, error: message.error };
+  if (message?.type === "matches") {
+    const { id, version, start, positions, first } = message;
+    return { type: "matches", id, version, start, positions, first };
+  }
+  if (message?.type === "searchfailed")
+    return { type: "searchfailed", id: message.id, error: message.error };
+  if (message?.type === "searchstale")
+    return { type: "searchstale", id: message.id };
   if (message?.type !== "state") return;
   const { state, title, artist, album, folder, elapsed, duration, volume } =
     message;

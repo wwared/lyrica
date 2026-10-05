@@ -35,6 +35,18 @@ export type Listener = {
   top(): void;
   /** `recentre()`: the list centres the current song and ends any pause. */
   recentre(): void;
+  /** `search(view)`: matches changed; `left` when search mode ended. */
+  searched(left: boolean): void;
+  /** `reveal(position)`: the list centres that row. */
+  reveal(position: number): void;
+};
+
+/** Search mode as the list's rows see it. */
+export type SearchView = {
+  /** Whether `position` is a known match. */
+  matches(position: number): boolean;
+  /** The focused match's position. */
+  focused: number | null;
 };
 
 /** Queue entries loaded on demand around the view (architecture.md → "Blocks"). */
@@ -53,10 +65,16 @@ export type QueueStore = {
   top(): void;
   /** A tap on the mini player's cover or the album button: the list centres the current song. */
   recentre(): void;
+  /** Enters, updates or (`null`) leaves search mode. */
+  search(view: SearchView | null): void;
+  /** Search mode: the list centres a match. */
+  reveal(position: number): void;
   /** The current song from the last `state`; both `null` offline or with none. */
   readonly current: { position: number | null; id: number | null };
   /** The last `show`. */
   readonly shown: boolean;
+  /** The last `search`. */
+  readonly searching: SearchView | null;
   entry(position: number): Entry | undefined;
   /** Whether the entry starts an album group; `undefined` while not served. */
   starts(position: number): boolean | undefined;
@@ -90,6 +108,7 @@ export function queueStore(
   const retries = new Map<number, number>();
   let current: QueueStore["current"] = { position: null, id: null };
   let listener: Listener | null = null;
+  let searching: SearchView | null = null;
 
   const served = (position: number) =>
     queue !== null && position < queue.length
@@ -204,11 +223,22 @@ export function queueStore(
     recentre() {
       listener?.recentre();
     },
+    search(view) {
+      const left = searching !== null && view === null;
+      searching = view;
+      listener?.searched(left);
+    },
+    reveal(position) {
+      listener?.reveal(position);
+    },
     get current() {
       return current;
     },
     get shown() {
       return shown;
+    },
+    get searching() {
+      return searching;
     },
     entry(position) {
       return served(position)?.songs[position % BLOCK];
