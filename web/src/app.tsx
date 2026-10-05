@@ -151,11 +151,9 @@ export function App() {
       <section class="queue" aria-hidden={!mini}>
         <div class="toolbar">
           {playlists}
-          <div class="player-toggles">
-            {playHere()}
-            {volume(true)}
-            {modes()}
-          </div>
+          {playHere()}
+          {volume(true)}
+          {modes()}
           <button
             class="album-start"
             aria-label="Play album from the start"

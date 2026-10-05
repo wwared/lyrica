@@ -114,14 +114,13 @@ body {
 }
 
 /* Fixed height, so the list never moves when buttons come or go. Positioned:
-   holds the toast. Three columns, so the player toggles stay centred; the
-   first icon lines up with the rows' track column, the last with the
-   durations' right edge. */
+   holds the toast. One evenly spaced row: the first icon lines up with the
+   rows' track column, the last with the durations' right edge. */
 .toolbar {
   position: relative;
   flex: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   height: 44px;
   padding: 0 10px;
@@ -147,21 +146,6 @@ body {
 
 .toolbar button:disabled {
   opacity: 0.5;
-}
-
-.toolbar .playlists {
-  grid-column: 1;
-  justify-self: start;
-}
-
-.player-toggles {
-  grid-column: 2;
-  display: flex;
-}
-
-.toolbar .album-start {
-  grid-column: 3;
-  justify-self: end;
 }
 
 .toolbar svg,
