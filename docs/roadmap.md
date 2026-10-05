@@ -4,7 +4,7 @@ Work proceeds bottom-up in small steps, each usable on its own. Design details l
 
 ## Current state
 
-Now playing, the live queue, stored playlists, the album button and the toolbar's player toggles are done; all but the toggles are checked on phones. The opaque iOS status bar (no fade over the toolbar) needs a check after reinstalling the home-screen app: the fade gone, the bottom controls fully on screen.
+Now playing, the live queue, stored playlists, the album button and the toolbar's player toggles are done; all but the toggles are checked on phones.
 
 - **Foundation:** Nix flake (dev shell, build, fmt, check, NixOS module); `lyrica-mpd` with the commands lyrica needs; server bridging WebSocket clients to MPD (idle, command and queue connections, reconnect with backoff, offline state, stored playlist listing and loading, album start); frontend embedded in the binary.
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume in a vertical pill growing up from its toggle, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
@@ -13,7 +13,7 @@ Now playing, the live queue, stored playlists, the album button and the toolbar'
 - **Album from the start:** a toolbar button, at its right, plays the current song's album from its first entry with random and single off (repeat and the queue untouched) and centres the list on it.
 - **Player toggles in mini mode:** play here, volume, random, single and repeat, centred in the toolbar; the volume pill grows down from there, the same size as in full mode.
 - **Play here:** plays MPD's `httpd` stream in the browser, with title, artist, album and cover on the lock screen.
-- **iOS fit:** fixed viewport (no bounce, no zoom, no selection), full height in home-screen apps, safe areas, opaque status bar in the page's colour.
+- **iOS fit:** fixed viewport (no bounce, no zoom, no selection), full height in home-screen apps, safe areas.
 - **Dark only:** gruvbox dark with its accent colours, regardless of the system setting.
 - **PWA:** app icon and favicon, screen kept on while visible, portrait on Android.
 
