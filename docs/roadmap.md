@@ -24,16 +24,18 @@ A toolbar button, at its right, that plays the current song's album from its fir
 3. **Done: server, `{"type":"albumstart"}`.** On the command connection: `status`, then `group_start` walks back from the current song in windows of 100 with `same_group`, then `play_in_order`, leaving out `playid` when the first entry is already playing (`architecture.md` → "Queue actions").
 4. **Done: previous / next re-centre.** In mini mode, `App`'s previous and next send, then call `store.recentre()`, like the cover tap; the push's song change then centres the new song (`architecture.md` → "Auto-centre").
 5. **Done: the button.** `"albumstart"` in `ws.ts`'s `Command`; in `App`'s toolbar, at its right, Material's `album` icon, disabled offline or without a current song; a tap sends and calls `store.recentre()` (`architecture.md` → "Queue actions").
-6. **Smoke** against the real MPD (playback control, random and single are allowed):
-   - mid-album, random and single on: the first entry plays, both off, one push;
-   - on the first entry, playing, random on: random off, the song carries on;
-   - on the first entry, paused: it plays from the beginning, random and single off;
-   - on the first entry, playing, both off: nothing changes, list centred;
-   - an album over 100 entries; one starting at a block edge;
-   - scrolled away or flinging, then the button, previous, next: centred;
-   - a natural song change while paused: not centred.
-
-   Then on the iPhone; this file's "Current state" gets the feature.
+6. **Smoke, then the iPhone.** No code expected; a bug found becomes its own fix commit before this one. Against the real MPD (playback control, `playid` by tapping a row, random and single are allowed; never the queue).
+   - **Harness:** `npm run build`, debug server on 127.0.0.1:8099 with `--music-url https://webmusic.wwared.com/`, headless Chromium per `development.md`, 390 × 844, `mobile: true`, touch emulation. A page script (`Page.addScriptToEvaluateOnNewDocument`) wraps `WebSocket` to log outgoing commands and incoming `state` messages with `performance.now()`, and a `requestAnimationFrame` loop records `.queue-list`'s `scrollTop` and `.queue-row.current`'s offset from the list's centre. Selectors: `[aria-label=Queue]` (to mini), `.album-start`, `[aria-label=Previous]`, `[aria-label=Next]`. Swipes and flings: `Input.dispatchTouchEvent` at x 195, starting inside the list (y 480). A reload needs a changed URL (`/?n`): a hash-only `Page.navigate` doesn't reload. Set modes with `mpc random on` / `mpc single on`, pause with `mpc pause`, move with `mpc next` or a row tap.
+   - **Already measured in step 5** (`architecture.md` → "Measurements" → "Queue actions"): mid-album with both modes on; a first entry playing with both on; a first entry playing with both off; disabled states. Not repeated unless something changed.
+   - **To do, each recording sent commands, pushes, `mpc status` before and after, and frames:**
+     - on a first entry, paused (`mpc pause`), random and single on: plays from 0:00, both off, one push, centred;
+     - an album over 100 entries, tapped near its end: the walk crosses windows; the group's first entry plays. Find one, and a group starting exactly at a block edge (position a multiple of 100), with a read-only scan: a Bun WS client requesting every block (`{"type":"queue",…}`, as in `ws.ts`) and reading the `start` flags, 1,759 blocks;
+     - a group starting at a block edge, tapped from its second entry: that edge entry plays;
+     - mid-fling (as step 4: fling from y 480, tap 120 ms in), the album button: the fling stops, the first entry centred; then previous and next the same way;
+     - centring paused by a swipe, then a natural song change (`mpc seek` to 3 s before the end, then wait): not centred until 15 s after the swipe.
+   - **Results:** append to `architecture.md` → "Measurements" → "Queue actions".
+   - **iPhone** (the user, home-screen app on the LAN; give them a checklist): the button's place and look beside the playlists button, the pressed and disabled looks; a tap mid-album plays the first entry with both modes off and centres it; the button, previous, next and a cover tap mid-fling stop the fling and centre (in Chromium a cover tap mid-fling was left ~28 px off, `architecture.md` → "Previous / next re-centre"; on iOS unchecked).
+   - **Then:** "Current state" gets the feature (a toolbar button bullet, and the live-queue line's re-centring), the milestone section is removed and "Open work" picks the next one.
 
 ## Open work
 
