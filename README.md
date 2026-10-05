@@ -1,6 +1,11 @@
 # Lyrica
 
-A mobile-first web client for [MPD](https://www.musicpd.org/).
+<p align="center">A mobile-first web client for <a href="https://www.musicpd.org/">MPD</a>.</p>
+
+<p align="center">
+  <img src="docs/screenshots/full.png" width="300" alt="Full mode: cover art, now playing and controls">
+  <img src="docs/screenshots/mini.png" width="300" alt="Mini mode: the queue grouped by album, with now playing below">
+</p>
 
 ## Features
 
