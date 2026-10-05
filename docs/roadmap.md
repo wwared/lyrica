@@ -4,7 +4,7 @@ Work proceeds bottom-up in small steps, each usable on its own. Design details l
 
 ## Current state
 
-Now playing, the live queue, stored playlists, the album button and the toolbar's player toggles are done; all but the toggles are checked on phones.
+Now playing, the live queue, stored playlists, the album button and the toolbar's player toggles are done; all but the toggles are checked on phones. The 22 px gap keeping iOS home-screen apps' top fade off the toolbar needs a check on the iPhone.
 
 - **Foundation:** Nix flake (dev shell, build, fmt, check, NixOS module); `lyrica-mpd` with the commands lyrica needs; server bridging WebSocket clients to MPD (idle, command and queue connections, reconnect with backoff, offline state, stored playlist listing and loading, album start); frontend embedded in the binary.
 - **Now playing:** title, artist (album artist as fallback), album, album art from the HTTP mirror, smooth progress bar with the time beside it, tap / drag seeking on the bar (full mode), previous / play-pause / next, random / single / repeat, MPD volume in a vertical pill growing up from its toggle, bouncing marquee for long lines, fixed-height layout pinned to the bottom, animated full / mini mode switch.
