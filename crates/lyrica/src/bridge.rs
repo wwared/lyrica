@@ -2,15 +2,21 @@
 //! → "MPD bridge".
 
 use std::{
+    collections::VecDeque,
     convert::Infallible,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use lyrica_mpd::{Client, Error, Result, Single, Song, State, Subsystem};
+use lyrica_mpd::{Client, Error, Filter, Result, Single, Song, State, Subsystem};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{
+    mpsc::{self, error::TryRecvError},
+    watch,
+};
+
+use crate::search::{self, Search};
 
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(10);
@@ -19,6 +25,10 @@ const MAX_BACKOFF: Duration = Duration::from_secs(10);
 const MAX_WINDOW: u32 = 200;
 /// Entries read per step of `group_start`'s walk back through the queue.
 const WALK_WINDOW: u32 = 100;
+/// Pause between search steps: a scan holds up every MPD client, and without
+/// it the next scan would go before the `status` fetch a state change set
+/// off meanwhile (`docs/architecture.md` → "Search" → "Server").
+const STEP_GAP: Duration = Duration::from_millis(2);
 /// Escaped in URL path segments: everything but RFC 3986 unreserved characters.
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -275,18 +285,35 @@ impl Window {
 }
 
 /// Read served on the queue connection.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum Read {
     Window(Window),
     Playlists,
+    /// Starts a search, replacing the connection's running one.
+    Search {
+        id: u32,
+        filter: Filter,
+        from: Option<u32>,
+    },
+    /// Fetches the chunk of matches `start..start + 500`.
+    Matches {
+        id: u32,
+        filter: Filter,
+        start: u32,
+    },
+    /// Drops the connection's search.
+    SearchEnd,
 }
 
 impl Read {
-    /// JSON reply for a read that couldn't be served now.
-    pub fn unserved(self) -> String {
+    /// JSON reply for a read that couldn't be served now, if it gets one.
+    pub fn unserved(&self) -> Option<String> {
         match self {
-            Read::Window(window) => window.reply(None),
-            Read::Playlists => playlists(None),
+            Read::Window(window) => Some(window.reply(None)),
+            Read::Playlists => Some(playlists(None)),
+            Read::Search { id, .. } => Some(search::failed(*id, "Busy")),
+            Read::Matches { id, start, .. } => Some(search::unserved(*id, *start)),
+            Read::SearchEnd => None,
         }
     }
 }
@@ -511,9 +538,10 @@ async fn load_listed(client: &mut Client, name: &str) -> Result<bool> {
     Ok(true)
 }
 
-/// Serves queue windows and playlist listings for all WebSocket clients, one
-/// at a time, on a dedicated connection, so state pushes and commands never
-/// wait on them.
+/// Serves queue windows, playlist listings and searches for all WebSocket
+/// clients, one MPD command at a time, on a dedicated connection, so state
+/// pushes and commands never wait on them. Waiting requests go before each
+/// search step; searches of several connections take turns.
 pub async fn serve_reads(
     mpd: Arc<Mpd>,
     music_url: Option<String>,
@@ -521,7 +549,36 @@ pub async fn serve_reads(
     snapshots: watch::Receiver<Snapshot>,
 ) {
     let mut client = None;
-    while let Some(ReadRequest { read, reply }) = requests.recv().await {
+    let mut searches: VecDeque<Search> = VecDeque::new();
+    let mut stepped = false;
+    loop {
+        let request = match searches.pop_front() {
+            None => requests.recv().await,
+            Some(mut search) => match requests.try_recv() {
+                Ok(request) => {
+                    searches.push_front(search);
+                    Some(request)
+                }
+                Err(TryRecvError::Empty) if stepped => {
+                    searches.push_front(search);
+                    stepped = false;
+                    tokio::time::sleep(STEP_GAP).await;
+                    continue;
+                }
+                Err(TryRecvError::Empty) => {
+                    let offline = snapshots.borrow().state == PlayState::Offline;
+                    stepped = !search.reply.is_closed();
+                    if stepped && search.step(&mpd, &mut client, offline).await {
+                        searches.push_back(search);
+                    }
+                    continue;
+                }
+                Err(TryRecvError::Disconnected) => None,
+            },
+        };
+        let Some(ReadRequest { read, reply }) = request else {
+            return;
+        };
         if reply.is_closed() {
             continue;
         }
@@ -551,6 +608,18 @@ pub async fn serve_reads(
                         playlists(None)
                     }
                 }
+            }
+            Read::Search { id, filter, from } => {
+                searches.retain(|s| !s.reply.same_channel(&reply));
+                searches.push_back(Search::new(id, filter, from, reply));
+                continue;
+            }
+            Read::SearchEnd => {
+                searches.retain(|s| !s.reply.same_channel(&reply));
+                continue;
+            }
+            Read::Matches { id, filter, start } => {
+                search::chunk(&mpd, &mut client, offline, id, filter, start).await
             }
         };
         // The client may have disconnected meanwhile.
@@ -705,7 +774,7 @@ async fn group_start(client: &mut Client, music_url: Option<&str>, position: u32
 /// Runs `run`, reconnecting first if `client` is gone. A reused connection
 /// may have been closed by MPD's `connection_timeout` without running the
 /// command, so connection errors on it are retried once.
-async fn execute<T>(
+pub async fn execute<T>(
     mpd: &Mpd,
     client: &mut Option<Client>,
     mut run: impl AsyncFnMut(&mut Client) -> Result<T>,
@@ -1298,5 +1367,330 @@ mod tests {
             jobs.send(Job::Command(Command::AlbumStart)).await.unwrap();
         }
         server.await.unwrap();
+    }
+
+    type Answer = oneshot::Sender<String>;
+
+    /// Queue length in the search tests.
+    const LENGTH: u32 = 10_000;
+
+    /// The queue task against a fake MPD driven by the test: each request
+    /// MPD gets (a search as `search WORD START:END`, others unquoted) comes
+    /// with a sender for its raw response.
+    struct Searching {
+        requests: mpsc::Sender<ReadRequest>,
+        mpd: mpsc::UnboundedReceiver<(String, Answer)>,
+        snapshots: watch::Sender<Snapshot>,
+    }
+
+    impl Searching {
+        async fn start() -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let mpd = Arc::new(Mpd {
+                addr: listener.local_addr().unwrap().to_string(),
+                password: None,
+            });
+            let (seen, mpd_rx) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                let mut s = accept(&listener).await;
+                loop {
+                    let mut line = String::new();
+                    if s.read_line(&mut line).await.unwrap() == 0 {
+                        return;
+                    }
+                    let request = if line == "command_list_begin\n" {
+                        let mut list = String::new();
+                        for _ in 0..3 {
+                            s.read_line(&mut list).await.unwrap();
+                        }
+                        assert!(list.starts_with("status\nplaylistsearch "), "{list}");
+                        assert!(list.ends_with("\ncommand_list_end\n"), "{list}");
+                        let after = |s: &'static str| list.split(s).nth(1).unwrap();
+                        let word = after("(*UTF)").split('\'').next().unwrap();
+                        let window = after("\"window\" \"").split('"').next().unwrap();
+                        format!("search {word} {window}")
+                    } else {
+                        line.trim_end().replace('"', "")
+                    };
+                    let (answer, answered) = oneshot::channel::<String>();
+                    if seen.send((request, answer)).is_err() {
+                        return;
+                    }
+                    let Ok(text) = answered.await else { return };
+                    s.write_all(text.as_bytes()).await.unwrap();
+                }
+            });
+            let playing = Snapshot {
+                state: PlayState::Play,
+                ..Snapshot::offline()
+            };
+            let (snapshots, snapshot_rx) = watch::channel(playing);
+            let (requests, request_rx) = mpsc::channel(8);
+            tokio::spawn(serve_reads(mpd, None, request_rx, snapshot_rx));
+            Searching {
+                requests,
+                mpd: mpd_rx,
+                snapshots,
+            }
+        }
+
+        async fn send(&self, read: Read, reply: &mpsc::UnboundedSender<String>) {
+            let request = ReadRequest {
+                read,
+                reply: reply.clone(),
+            };
+            self.requests.send(request).await.unwrap();
+        }
+
+        /// The next request MPD gets.
+        async fn next(&mut self) -> (String, Answer) {
+            tokio::time::timeout(Duration::from_secs(5), self.mpd.recv())
+                .await
+                .expect("MPD request in time")
+                .unwrap()
+        }
+
+        /// Answers the next request, a search, from the matches at `positions`.
+        async fn serve(&mut self, version: u32, positions: &[u32]) -> String {
+            let (request, answer) = self.next().await;
+            answer.send(found(version, positions, &request)).unwrap();
+            request
+        }
+    }
+
+    fn search(id: u32, word: &str, from: Option<u32>) -> Read {
+        let filter = crate::query::compile(word).unwrap();
+        Read::Search { id, filter, from }
+    }
+
+    fn window(start: u32, end: u32) -> Read {
+        let window = serde_json::json!({"version": 1, "start": start, "end": end});
+        Read::Window(serde_json::from_value(window).unwrap())
+    }
+
+    /// Matches `START..END` of `positions` for `search WORD START:END`.
+    fn chunk_of<'a>(positions: &'a [u32], request: &str) -> &'a [u32] {
+        let window = request.rsplit(' ').next().unwrap();
+        let (start, end) = window.split_once(':').unwrap();
+        let clamp = |n: &str| n.parse::<usize>().unwrap().min(positions.len());
+        &positions[clamp(start)..clamp(end)]
+    }
+
+    /// MPD's response to a search command, at queue `version`.
+    fn found(version: u32, positions: &[u32], request: &str) -> String {
+        let songs: String = chunk_of(positions, request)
+            .iter()
+            .map(|p| format!("file: f\nPos: {p}\n"))
+            .collect();
+        format!("playlist: {version}\nplaylistlength: {LENGTH}\n{songs}OK\n")
+    }
+
+    async fn received(replies: &mut mpsc::UnboundedReceiver<String>) -> serde_json::Value {
+        let text = tokio::time::timeout(Duration::from_secs(5), replies.recv())
+            .await
+            .expect("reply in time")
+            .unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// Whether `reply` is a search's last.
+    fn last(reply: &serde_json::Value) -> bool {
+        reply["type"] != "matches"
+            || !reply["first"].is_null()
+            || (reply["start"] == 0 && reply["positions"] == serde_json::json!([]))
+    }
+
+    #[tokio::test]
+    async fn search_sends_chunk_zero_then_the_one_with_the_first_match_after_from() {
+        let mut t = Searching::start().await;
+        let every5: Vec<u32> = (0..2000).map(|i| i * 5).collect();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut run = async |positions: &[u32], from| {
+            t.send(search(7, "x", from), &tx).await;
+            let mut replies: Vec<serde_json::Value> = Vec::new();
+            while replies.last().is_none_or(|r| !last(r)) {
+                tokio::select! {
+                    _ = t.serve(1, positions) => {}
+                    reply = received(&mut rx) => replies.push(reply),
+                }
+            }
+            replies
+        };
+        let chunk =
+            |start: usize| serde_json::json!(every5[start.min(2000)..(start + 500).min(2000)]);
+        for (from, start, first) in [
+            (None, 0, 0),
+            (Some(1000), 0, 201),
+            // "After" is strictly after; the last of chunk 0, then a gap.
+            (Some(2495), 500, 500),
+            (Some(2497), 500, 500),
+            (Some(4000), 500, 801),
+            (Some(9000), 1500, 1801),
+            // None after: the first match, chunk 0 again.
+            (Some(9995), 0, 0),
+            (Some(LENGTH + 5), 0, 0),
+        ] {
+            let replies = run(&every5, from).await;
+            assert_eq!(replies[0]["start"], 0, "chunk 0 first, from {from:?}");
+            for reply in &replies[..replies.len() - 1] {
+                assert!(reply["first"].is_null());
+            }
+            for reply in &replies {
+                let start = reply["start"].as_u64().unwrap() as usize;
+                assert_eq!(reply["positions"], chunk(start));
+            }
+            assert_eq!(
+                replies.last().unwrap(),
+                &serde_json::json!({"type": "matches", "id": 7, "version": 1, "start": start,
+                                    "positions": chunk(start), "first": first}),
+                "from {from:?}"
+            );
+        }
+        // Fewer than a chunk, none after `from`: wraps within chunk 0.
+        let few = [3, 8];
+        let replies = run(&few, Some(8)).await;
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0]["first"], 0);
+        // No matches.
+        let replies = run(&[], Some(8)).await;
+        assert_eq!(
+            replies,
+            [
+                serde_json::json!({"type": "matches", "id": 7, "version": 1, "start": 0,
+                                "positions": [], "first": null})
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn waiting_reads_go_before_each_search_step_and_searches_take_turns() {
+        let mut t = Searching::start().await;
+        let every5: Vec<u32> = (0..2000).map(|i| i * 5).collect();
+        // Dense, then sparse: chunk 0's density overshoots, so "a" takes
+        // several steps.
+        let skewed: Vec<u32> = (0..500).chain((0..100).map(|i| 500 + i * 90)).collect();
+        let (a, _a_rx) = mpsc::unbounded_channel();
+        let (b, _b_rx) = mpsc::unbounded_channel();
+        t.send(search(1, "a", Some(9000)), &a).await;
+        let (request, answer) = t.next().await;
+        assert_eq!(request, "search a 0:500");
+        // Queued while MPD runs the step.
+        t.send(window(0, 2), &b).await;
+        t.send(search(2, "b", Some(9000)), &b).await;
+        answer.send(found(1, &skewed, &request)).unwrap();
+        let (request, answer) = t.next().await;
+        assert_eq!(request, "playlistinfo 0:2");
+        answer.send("OK\n".into()).unwrap();
+        let mut words = Vec::new();
+        for _ in 0..4 {
+            let (request, answer) = t.next().await;
+            let word = request.split(' ').nth(1).unwrap().to_owned();
+            let positions = if word == "a" { &skewed } else { &every5 };
+            answer.send(found(1, positions, &request)).unwrap();
+            words.push(word);
+        }
+        assert_eq!(words, ["a", "b", "a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn searches_end_when_replaced_ended_closed_or_stale() {
+        let mut t = Searching::start().await;
+        let every5: Vec<u32> = (0..2000).map(|i| i * 5).collect();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        // Proves the search before it ran no further step.
+        let idle = async |t: &mut Searching, tx| {
+            t.send(window(0, 2), tx).await;
+            let (request, answer) = t.next().await;
+            assert_eq!(request, "playlistinfo 0:2");
+            answer.send("OK\n".into()).unwrap();
+        };
+
+        t.send(search(1, "a", Some(9000)), &tx).await;
+        let (request, answer) = t.next().await;
+        t.send(search(2, "b", Some(9000)), &tx).await;
+        answer.send(found(1, &every5, &request)).unwrap();
+        assert_eq!(received(&mut rx).await["id"], 1);
+        let (request, answer) = t.next().await;
+        assert_eq!(request, "search b 0:500");
+        t.send(Read::SearchEnd, &tx).await;
+        answer.send(found(1, &every5, &request)).unwrap();
+        assert_eq!(received(&mut rx).await["id"], 2);
+        idle(&mut t, &tx).await;
+        received(&mut rx).await;
+
+        let (closing, closing_rx) = mpsc::unbounded_channel();
+        t.send(search(3, "c", Some(9000)), &closing).await;
+        let (request, answer) = t.next().await;
+        drop(closing_rx);
+        answer.send(found(1, &every5, &request)).unwrap();
+        idle(&mut t, &tx).await;
+        received(&mut rx).await;
+
+        // A new queue version, or an `ACK` after chunk 0 (the queue shrank).
+        let probe_acks = "ACK [2@1] {playlistsearch} Bad song index\n";
+        for (id, version, response) in [(4, 2, None), (5, 1, Some(probe_acks))] {
+            t.send(search(id, "d", Some(9000)), &tx).await;
+            t.serve(1, &every5).await;
+            assert_eq!(received(&mut rx).await["first"], serde_json::Value::Null);
+            let (request, answer) = t.next().await;
+            let response = response.map_or_else(|| found(version, &every5, &request), String::from);
+            answer.send(response).unwrap();
+            assert_eq!(
+                received(&mut rx).await,
+                serde_json::json!({"type": "searchstale", "id": id})
+            );
+            idle(&mut t, &tx).await;
+            received(&mut rx).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn search_failures_and_chunk_fetches() {
+        let mut t = Searching::start().await;
+        let every5: Vec<u32> = (0..2000).map(|i| i * 5).collect();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let fetch = |start| Read::Matches {
+            id: 3,
+            filter: crate::query::compile("x").unwrap(),
+            start,
+        };
+        t.snapshots.send_modify(|s| s.state = PlayState::Offline);
+        t.send(search(1, "x", None), &tx).await;
+        assert_eq!(
+            received(&mut rx).await,
+            serde_json::json!({"type": "searchfailed", "id": 1, "error": "MPD offline"})
+        );
+        t.send(fetch(500), &tx).await;
+        assert_eq!(
+            received(&mut rx).await,
+            serde_json::json!({"type": "matches", "id": 3, "version": null, "start": 500,
+                               "positions": null, "first": null})
+        );
+        t.snapshots.send_modify(|s| s.state = PlayState::Play);
+
+        t.send(search(2, "x", None), &tx).await;
+        let (_, answer) = t.next().await;
+        let invalid = "playlist: 1\nplaylistlength: 10\nACK [2@1] {playlistsearch} \
+                       Error in regex at offset 1: missing closing parenthesis\n";
+        answer.send(invalid.into()).unwrap();
+        assert_eq!(
+            received(&mut rx).await,
+            serde_json::json!({"type": "searchfailed", "id": 2,
+                               "error": "Error in regex at offset 1: missing closing parenthesis"})
+        );
+
+        t.send(fetch(1500), &tx).await;
+        assert_eq!(t.serve(4, &every5).await, "search x 1500:2000");
+        assert_eq!(
+            received(&mut rx).await,
+            serde_json::json!({"type": "matches", "id": 3, "version": 4, "start": 1500,
+                               "positions": every5[1500..], "first": null})
+        );
+        t.send(fetch(20_000), &tx).await;
+        let (_, answer) = t.next().await;
+        answer
+            .send("ACK [2@1] {playlistsearch} Bad song index\n".into())
+            .unwrap();
+        assert_eq!(received(&mut rx).await["positions"], serde_json::json!([]));
     }
 }

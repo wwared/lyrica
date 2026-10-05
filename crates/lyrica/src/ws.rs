@@ -1,6 +1,6 @@
 //! Frontend WebSocket endpoint: pushes the player state, accepts commands,
-//! queue window requests and stored playlist listings and loads. Protocol:
-//! `docs/architecture.md` → "MPD bridge".
+//! queue window requests, searches and stored playlist listings and loads.
+//! Protocol: `docs/architecture.md` → "MPD bridge" and "Search" → "Server".
 
 use std::{sync::Arc, time::Instant};
 
@@ -17,7 +17,10 @@ use tokio::sync::{
     watch,
 };
 
-use crate::bridge::{self, Command, Job, Read, ReadRequest, Snapshot, Window};
+use crate::{
+    bridge::{self, Command, Job, Read, ReadRequest, Snapshot, Window},
+    query, search,
+};
 
 #[derive(Clone)]
 pub struct Bridge {
@@ -36,6 +39,17 @@ enum ClientMessage {
     Load {
         name: String,
     },
+    Search {
+        id: u32,
+        query: String,
+        from: Option<u32>,
+    },
+    Matches {
+        id: u32,
+        query: String,
+        start: u32,
+    },
+    SearchEnd,
     #[serde(untagged)]
     Command(Command),
 }
@@ -103,6 +117,23 @@ async fn handle(mut socket: WebSocket, mut bridge: Bridge) {
                             return;
                         }
                     }
+                    Ok(ClientMessage::Search { id, query, from }) => {
+                        let request = query::compile(&query).map(|filter| Read::Search { id, filter, from });
+                        if !search_read(&bridge, &reply_tx, id, request) {
+                            return;
+                        }
+                    }
+                    Ok(ClientMessage::Matches { id, query, start }) => {
+                        let request = query::compile(&query).map(|filter| Read::Matches { id, filter, start });
+                        if !search_read(&bridge, &reply_tx, id, request) {
+                            return;
+                        }
+                    }
+                    Ok(ClientMessage::SearchEnd) => {
+                        if !read(&bridge, &reply_tx, Read::SearchEnd) {
+                            return;
+                        }
+                    }
                     Err(error) => tracing::warn!("ignoring message {:?}: {error}", text.as_str()),
                 },
                 // axum answers pings; a close frame ends the stream.
@@ -122,11 +153,29 @@ fn read(bridge: &Bridge, reply: &mpsc::UnboundedSender<String>, read: Read) -> b
     };
     match bridge.reads.try_send(request) {
         Ok(()) => true,
-        Err(TrySendError::Full(_)) => {
-            let _ = reply.send(read.unserved());
+        Err(TrySendError::Full(request)) => {
+            if let Some(text) = request.read.unserved() {
+                let _ = reply.send(text);
+            }
             true
         }
         Err(TrySendError::Closed(_)) => false,
+    }
+}
+
+/// `read` for a compiled query; a query error is answered here.
+fn search_read(
+    bridge: &Bridge,
+    reply: &mpsc::UnboundedSender<String>,
+    id: u32,
+    request: Result<Read, query::QueryError>,
+) -> bool {
+    match request {
+        Ok(request) => read(bridge, reply, request),
+        Err(error) => {
+            let _ = reply.send(search::failed(id, &error.to_string()));
+            true
+        }
     }
 }
 
@@ -188,6 +237,70 @@ mod tests {
         assert!(parse(r#"{"type":"nope"}"#).is_err());
     }
 
+    /// Serves `bridge` and connects past the `config` and first `state`.
+    async fn open(bridge: Bridge) -> Client {
+        let app = Router::new().route("/ws", get(upgrade)).with_state(bridge);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+            .await
+            .unwrap();
+        assert_eq!(recv(&mut ws).await["type"], "config");
+        assert_eq!(recv(&mut ws).await["type"], "state");
+        ws
+    }
+
+    #[tokio::test]
+    async fn search_replies_over_the_socket() {
+        let mpd_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mpd = Arc::new(Mpd {
+            addr: mpd_listener.local_addr().unwrap().to_string(),
+            password: None,
+        });
+        tokio::spawn(async move {
+            let (stream, _) = mpd_listener.accept().await.unwrap();
+            let mut stream = BufReader::new(stream);
+            stream.write_all(b"OK MPD 0.24.0\n").await.unwrap();
+            let mut list = String::new();
+            for _ in 0..4 {
+                stream.read_line(&mut list).await.unwrap();
+            }
+            assert!(
+                list.ends_with("\"window\" \"0:500\"\ncommand_list_end\n"),
+                "{list}"
+            );
+            let found = "playlist: 9\nplaylistlength: 50\nfile: a\nPos: 4\nfile: b\nPos: 40\nOK\n";
+            stream.write_all(found.as_bytes()).await.unwrap();
+            stream
+        });
+        let playing = Snapshot {
+            state: PlayState::Play,
+            ..Snapshot::offline()
+        };
+        let (_snapshot_tx, snapshots) = watch::channel(playing);
+        let (jobs, _job_rx) = mpsc::channel(1);
+        let (reads, read_rx) = mpsc::channel(2);
+        tokio::spawn(bridge::serve_reads(mpd, None, read_rx, snapshots.clone()));
+        let mut ws = open(Bridge {
+            snapshots,
+            jobs,
+            reads,
+            config: config_message(None).into(),
+        })
+        .await;
+        send(
+            &mut ws,
+            serde_json::json!({"type": "search", "id": 3, "query": "x", "from": 10}),
+        )
+        .await;
+        assert_eq!(
+            recv(&mut ws).await,
+            serde_json::json!({"type": "matches", "id": 3, "version": 9, "start": 0,
+                               "positions": [4, 40], "first": 1})
+        );
+    }
+
     #[tokio::test]
     async fn stalled_window_never_delays_state_or_commands() {
         let mpd_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -214,20 +327,13 @@ mod tests {
         let (jobs, mut job_rx) = mpsc::channel(1);
         let (reads, read_rx) = mpsc::channel(2);
         tokio::spawn(bridge::serve_reads(mpd, None, read_rx, snapshots.clone()));
-        let app = Router::new().route("/ws", get(upgrade)).with_state(Bridge {
+        let mut ws = open(Bridge {
             snapshots,
             jobs,
             reads,
             config: config_message(None).into(),
-        });
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
-            .await
-            .unwrap();
-        assert_eq!(recv(&mut ws).await["type"], "config");
-        assert_eq!(recv(&mut ws).await["type"], "state");
+        })
+        .await;
 
         let window = |start: u32| serde_json::json!({"type": "queue", "version": 1, "start": start, "end": start + 100});
         send(&mut ws, window(0)).await;
@@ -244,6 +350,35 @@ mod tests {
         assert_eq!(
             recv(&mut ws).await,
             serde_json::json!({"type": "playlists", "names": null})
+        );
+        send(
+            &mut ws,
+            serde_json::json!({"type": "search", "id": 1, "query": "x", "from": 5}),
+        )
+        .await;
+        assert_eq!(
+            recv(&mut ws).await,
+            serde_json::json!({"type": "searchfailed", "id": 1, "error": "Busy"})
+        );
+        send(
+            &mut ws,
+            serde_json::json!({"type": "matches", "id": 1, "query": "x", "start": 500}),
+        )
+        .await;
+        assert_eq!(
+            recv(&mut ws).await,
+            serde_json::json!({"type": "matches", "id": 1, "version": null, "start": 500,
+                               "positions": null, "first": null})
+        );
+        // Never reaches the queue task.
+        send(
+            &mut ws,
+            serde_json::json!({"type": "search", "id": 2, "query": " \t", "from": null}),
+        )
+        .await;
+        assert_eq!(
+            recv(&mut ws).await,
+            serde_json::json!({"type": "searchfailed", "id": 2, "error": "Empty search"})
         );
 
         snapshot_tx.send_replace(Snapshot {
