@@ -48,6 +48,9 @@ Queue checks (`architecture.md` → "Responsiveness"):
 - Taps during a fling: an emulated touch on a button only stops the fling, with no `click` (iOS clicks); call the element's `click()` mid-fling instead.
 - Cover bytes: the mirror sends no `Timing-Allow-Origin`, so resource timing reports 0 bytes; count `Network.loadingFinished`'s `encodedDataLength` instead. `Network.clearBrowserCache` before each run.
 - Real queue regions: dispatch a `wheel` event on the list first (pauses auto-centring, so song changes don't move it), then jump by setting `scrollTop`, up to 8,000 rows at a time (the space's half; re-anchoring recentres between jumps). Most of the queue has ~6 folders per 100 rows, almost all with covers; 94,000–98,200 has a folder per row, without covers.
+- Main-thread cost (animations, idle work): `Performance.enable`, then `Performance.getMetrics` before and after a fixed idle period or fling sequence; compare the deltas of `TaskDuration`, `RecalcStyleDuration` and `LayoutCount`. `document.getAnimations()` counts what's still animating (`playState`).
+
+iOS home-screen layout: add `standalone` to `<html>`'s classes in the page (as `index.html` does when `navigator.standalone`) to get its `--app-height` and `--top`; the safe-area insets stay 0 in Chromium.
 
 ## Frontend gotchas
 
