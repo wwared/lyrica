@@ -1,5 +1,6 @@
 use std::{
-    fmt, io,
+    fmt::{self, Write as _},
+    io,
     ops::Range,
     pin::Pin,
     task::{Context, Poll},
@@ -12,7 +13,7 @@ use tokio::{
 };
 
 use crate::{
-    Error, Result, Single, Song, Status, Subsystem,
+    Error, Filter, QueueMatches, Result, Single, Song, Status, Subsystem,
     parse::{self, Line},
 };
 
@@ -93,6 +94,28 @@ impl Client {
         let capacity = range.len().min(MAX_RESERVED_SONGS);
         let arg = format!("{}:{}", range.start, range.end);
         Song::list_from_pairs(self.run("playlistinfo", &[&arg]).await?, capacity)
+    }
+
+    /// Queue positions of matches `window` of `filter` (match indices, in
+    /// queue order; MPD clamps the end), with `status`'s queue version and
+    /// length, in one command list. MPD rejects a start past the queue's
+    /// length and an end over 2³¹ − 1 (`ACK`).
+    pub async fn search_queue(
+        &mut self,
+        filter: &Filter,
+        window: Range<u32>,
+    ) -> Result<QueueMatches> {
+        let mut text = String::new();
+        write!(text, "{filter}").map_err(|_| Error::InvalidArgument)?;
+        let capacity = window.len().min(MAX_RESERVED_SONGS);
+        let window = format!("{}:{}", window.start, window.end);
+        let pairs = self
+            .run_list(&[
+                ("status", &[]),
+                ("playlistsearch", &[&text, "window", &window]),
+            ])
+            .await?;
+        QueueMatches::from_pairs(pairs, capacity)
     }
 
     /// Starts playback, resuming if paused.
@@ -199,7 +222,7 @@ impl Client {
         &mut self,
         command: &str,
         args: &[&str],
-    ) -> Result<impl Iterator<Item = (&str, &str)>> {
+    ) -> Result<impl Iterator<Item = (&str, &str)> + use<'_>> {
         self.request.clear();
         encode(&mut self.request, command, args)?;
         self.send().await
@@ -210,7 +233,7 @@ impl Client {
     async fn run_list(
         &mut self,
         commands: &[(&str, &[&str])],
-    ) -> Result<impl Iterator<Item = (&str, &str)>> {
+    ) -> Result<impl Iterator<Item = (&str, &str)> + use<'_>> {
         self.request.clear();
         self.request.push_str("command_list_begin\n");
         for (command, args) in commands {
@@ -310,7 +333,7 @@ mod tests {
     use tokio::{net::TcpListener, task::JoinHandle};
 
     use super::*;
-    use crate::{Ack, State};
+    use crate::{Ack, State, Tag};
 
     /// Fake MPD: expects each request in order, sends the scripted response,
     /// then waits for the client to disconnect.
@@ -550,6 +573,88 @@ mod tests {
             ),
             other => panic!("{other:?}"),
         }
+        client.ping().await.unwrap();
+        drop(client);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn search_queue() {
+        // Larger than the read buffer, so it takes several reads.
+        let found: String = (0..300)
+            .map(|i| {
+                format!(
+                    "file: dir/{i}.mp3\nTitle: {}\nduration: 1.5\nPos: {}\nId: 9\n",
+                    "x".repeat(100),
+                    i * 3
+                )
+            })
+            .collect();
+        let found = format!("playlist: 2\nplaylistlength: 175872\nduration: 247.106\n{found}OK\n");
+        let script = vec![
+            ("command_list_begin\n", ""),
+            ("status\n", ""),
+            (
+                concat!(
+                    r#"playlistsearch "((title =~ '(*UTF)it\\\\\\'s a') AND (file !~ 'ac\\\\/dc'))" "window" "0:500""#,
+                    "\n"
+                ),
+                "",
+            ),
+            ("command_list_end\n", &*found.leak()),
+            ("command_list_begin\n", ""),
+            ("status\n", ""),
+            (
+                "playlistsearch \"(any =~ 'none')\" \"window\" \"500:1000\"\n",
+                "",
+            ),
+            (
+                "command_list_end\n",
+                "volume: 50\nplaylist: 3\nplaylistlength: 10\nOK\n",
+            ),
+            ("command_list_begin\n", ""),
+            ("status\n", ""),
+            ("playlistsearch \"(title =~ '(')\" \"window\" \"0:1\"\n", ""),
+            (
+                "command_list_end\n",
+                "playlist: 3\nplaylistlength: 10\n\
+                 ACK [2@1] {playlistsearch} Error in regex at offset 1: missing closing parenthesis\n",
+            ),
+            ("ping\n", "OK\n"),
+        ];
+        let (addr, server) = fake(script.leak()).await;
+        let mut client = Client::connect(addr).await.unwrap();
+        let regex = |tag, pattern: &str, negated| Filter::Regex {
+            tag,
+            pattern: pattern.into(),
+            negated,
+        };
+        let filter = Filter::And(vec![
+            regex(Tag::Title, r"(*UTF)it\'s a", false),
+            regex(Tag::File, r"ac\/dc", true),
+        ]);
+        let matches = client.search_queue(&filter, 0..500).await.unwrap();
+        assert_eq!(matches.queue_version, 2);
+        assert_eq!(matches.queue_length, 175872);
+        assert_eq!(matches.positions.len(), 300);
+        assert_eq!(matches.positions[299], 897);
+        let none = client
+            .search_queue(&regex(Tag::Any, "none", false), 500..1000)
+            .await
+            .unwrap();
+        assert_eq!((none.queue_version, none.queue_length), (3, 10));
+        assert!(none.positions.is_empty());
+        match client
+            .search_queue(&regex(Tag::Title, "(", false), 0..1)
+            .await
+        {
+            Err(Error::Ack(ack)) => assert_eq!((ack.index, &*ack.command), (1, "playlistsearch")),
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(
+            client.search_queue(&Filter::And(vec![]), 0..1).await,
+            Err(Error::InvalidArgument)
+        ));
         client.ping().await.unwrap();
         drop(client);
         server.await.unwrap();

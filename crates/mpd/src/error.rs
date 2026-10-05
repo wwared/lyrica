@@ -10,7 +10,8 @@ pub enum Error {
     Ack(Ack),
     /// Unparseable response. The client is unusable.
     Protocol(String),
-    /// Argument contains a newline, which the protocol can't carry.
+    /// Argument the protocol can't carry: a newline, or a filter with an
+    /// empty `Filter::And`. Nothing was sent.
     InvalidArgument,
     /// An earlier command failed or was cancelled mid-response, so the
     /// connection is out of sync. Reconnect.
@@ -34,7 +35,7 @@ impl fmt::Display for Error {
             Error::Io(e) => write!(f, "MPD connection: {e}"),
             Error::Ack(ack) => write!(f, "{ack}"),
             Error::Protocol(msg) => write!(f, "MPD protocol: {msg}"),
-            Error::InvalidArgument => f.write_str("MPD argument contains a newline"),
+            Error::InvalidArgument => f.write_str("invalid MPD argument"),
             Error::Broken => f.write_str("MPD connection out of sync"),
         }
     }

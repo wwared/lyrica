@@ -8,11 +8,13 @@ mod client;
 mod error;
 mod idle;
 mod parse;
+mod search;
 mod song;
 mod status;
 
 pub use client::{Client, Version};
 pub use error::{Ack, Error, Result};
 pub use idle::Subsystem;
+pub use search::{Filter, QueueMatches, Tag};
 pub use song::Song;
 pub use status::{Single, State, Status};
