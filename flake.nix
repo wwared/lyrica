@@ -35,8 +35,8 @@
 
           # Upstream webfont release: nixpkgs only packages TTF/TTC builds of Iosevka.
           iosevkaAile = pkgs.fetchzip {
-            url = "https://github.com/be5invis/Iosevka/releases/download/v34.3.0/PkgWebFont-IosevkaAile-34.3.0.zip";
-            hash = "sha256-KQ+mGYrGEJMWQYmtCj6mIEN8kVCAmkuzJzpOLtkf7/o=";
+            url = "https://github.com/be5invis/Iosevka/releases/download/v34.9.0/PkgWebFont-IosevkaAile-34.9.0.zip";
+            hash = "sha256-G0WtYPxoWQQi4H00xwCYfEbb2bWQvZrB8Rp7HVGiH04=";
             stripRoot = false;
           };
           # The weights the UI uses; Vite bundles them from web/src/fonts.

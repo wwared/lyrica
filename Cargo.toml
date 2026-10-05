@@ -25,7 +25,8 @@ rust-embed = { version = "8.12.0", features = [
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 socket2 = { version = "0.6.5", features = ["all"] }
-tokio = "1.53.1"
+tokio = "1.53.2"
+# Test client only: kept on axum's tungstenite version, so tests build one copy.
 tokio-tungstenite = "0.29.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

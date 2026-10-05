@@ -137,7 +137,7 @@ services.lyrica = {
 Inside `nix develop`, from the repo root:
 
 1. Nix inputs (nixpkgs, so also Rust and Node; crane; treefmt-nix): `nix flake update`.
-2. Rust: `nix shell nixpkgs#cargo-edit -c cargo upgrade --incompatible` raises the requirements in `Cargo.toml`, majors included; then `cargo update` for the rest of `Cargo.lock`.
+2. Rust: `nix shell nixpkgs#cargo-edit -c cargo upgrade --incompatible --exclude tokio-tungstenite` raises the requirements in `Cargo.toml`, majors included; then `cargo update` for the rest of `Cargo.lock`. `tokio-tungstenite` (the tests' WS client) follows the version axum depends on (`cargo tree -i tokio-tungstenite`).
 3. npm, in `web/`: `nix shell nixpkgs#npm-check-updates -c ncu -u` raises the ranges in `package.json`; then `npm install && npm update` for `package-lock.json`.
 4. Iosevka: the webfont release in `flake.nix` (`iosevkaAile`) is pinned by URL and hash. Change the version in the URL (twice), set `hash = "";`, run `nix build` and copy the hash it reports.
 5. `nix fmt && nix flake check`, fix breaking changes, then try the app.
