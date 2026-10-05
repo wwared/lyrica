@@ -78,11 +78,6 @@ export function App() {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const nowPlaying = useRef<HTMLElement>(null);
   const capture = useFlip(nowPlaying, mini);
-  // A skip is asked for, so the list follows it even while paused by a scroll.
-  const skip = (type: "previous" | "next") => {
-    send({ type });
-    if (mini) store.recentre();
-  };
   // The same element while the length holds, so Preact skips the list on
   // every other state push.
   const queueLength = snapshot?.queue?.length ?? 0;
@@ -189,7 +184,7 @@ export function App() {
               data-flip="move"
               aria-label="Previous"
               disabled={disabled}
-              onClick={() => skip("previous")}
+              onClick={() => send({ type: "previous" })}
             >
               <Icon path={PREVIOUS} />
             </button>
@@ -206,7 +201,7 @@ export function App() {
               data-flip="move"
               aria-label="Next"
               disabled={disabled}
-              onClick={() => skip("next")}
+              onClick={() => send({ type: "next" })}
             >
               <Icon path={NEXT} />
             </button>

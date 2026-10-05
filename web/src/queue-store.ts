@@ -49,7 +49,7 @@ export type QueueStore = {
   show(shown: boolean): void;
   /** After a stored playlist load: the list jumps to its first row. */
   top(): void;
-  /** A tap on the mini player's cover, previous or next: the list centres the current song. */
+  /** A tap on the mini player's cover or the album button: the list centres the current song. */
   recentre(): void;
   /** The current song from the last `state`; both `null` offline or with none. */
   readonly current: { position: number | null; id: number | null };
