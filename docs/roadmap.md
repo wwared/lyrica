@@ -26,20 +26,21 @@ A toolbar button, at its right, that plays the current song's album from its fir
    - Tests: flags for windows starting at position 0, at a group start and inside a group; `album` `None`; `folder` `None`. Queue-store tests for the new ranges.
    - Smoke: the "Album grouping" check (separators against `playlistinfo` at 9 spots, including block edges) still matches.
    - Docs (`architecture.md`): "Windows", "Entries", "Blocks", "Album grouping".
-2. **`lyrica-mpd`: one command list.** A `Client` method sending, as one command list, `random 0` and `single 0` when asked and `playid` when given an id; nothing when there's nothing to send. Unit test against the mock server.
+2. **`lyrica-mpd`: one command list.** A `Client` method sending `random 0` and `single 0`, then `playid` when given an id, as one command list. Unit test against the mock server.
 3. **Server: `{"type":"albumstart"}`.** A `Command` on the command connection, in order with the others (a `next` sent just before is seen), inside the retry helper:
-   - Fresh `status`: current position, random, single. No current song: nothing.
+   - Fresh `status`: play state, current position. No current song: nothing.
    - Walk back from the current position in windows of 100 with `same_group` to the group's first entry. Typically one window; worst case, one group spanning the queue, ~1,000 windows (~0.8 s); no cap.
-   - Send `random 0` if random is on, `single 0` if single is on (also `oneshot`), and `playid` with the first entry's id unless it's the current song (it would restart). Nothing to send: nothing sent (MPD emits no idle event for a no-op).
+   - Current song is the first entry and playing: send `random 0` and `single 0`, so it carries on. Otherwise (another entry, or the first one paused or stopped): `random 0`, `single 0` and `playid` with the first entry's id, which starts it from the beginning. Always both mode commands, whatever their state: a no-op costs nothing, and the list re-centres locally even without a push.
    - No reply: the state push confirms. By id, so a queue replaced meanwhile makes MPD reject it (logged).
-   - Tests: the walk with a fake window source (group starting at 0, on a window edge, current entry first, spanning windows, `album` `None`); the commands sent for each case above.
+   - Tests: the walk with a fake window source (group starting at 0, on a window edge, current entry first, spanning windows, `album` `None`); the commands sent: first entry playing, first entry paused, first entry stopped, another entry.
    - Docs (`architecture.md`): WS protocol, a "Queue actions" section.
 4. **Active song changes re-centre.** In mini mode, taps on previous and next call `store.recentre()` after sending, like the cover tap: the pause ends, a fling halts, the current song centres at once, and the push's song change centres the new one. Natural song changes keep respecting the pause. Full mode: nothing (opening centres).
 5. **The button.** `{type: "albumstart"}` in `ws.ts`'s `Command`. At the toolbar's right, 44 × 44 px, Material's `album` icon, muted like the playlists button, its icon ending at the rows' 20 px right inset. Disabled offline or without a current song. A tap sends and calls `store.recentre()`.
 6. **Smoke** against the real MPD (playback control, random and single are allowed):
    - mid-album, random and single on: the first entry plays, both off, one push;
-   - on the first entry with random on: only random off, the song carries on;
-   - on the first entry, both off: nothing sent, list centred;
+   - on the first entry, playing, random on: random off, the song carries on;
+   - on the first entry, paused: it plays from the beginning, random and single off;
+   - on the first entry, playing, both off: nothing changes, list centred;
    - an album over 100 entries; one starting at a block edge;
    - scrolled away or flinging, then the button, previous, next: centred;
    - a natural song change while paused: not centred.
