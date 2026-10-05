@@ -24,18 +24,21 @@ A toolbar button, at its right, that plays the current song's album from its fir
 3. **Done: server, `{"type":"albumstart"}`.** On the command connection: `status`, then `group_start` walks back from the current song in windows of 100 with `same_group`, then `play_in_order`, leaving out `playid` when the first entry is already playing (`architecture.md` → "Queue actions").
 4. **Done: previous / next re-centre.** In mini mode, `App`'s previous and next send, then call `store.recentre()`, like the cover tap; the push's song change then centres the new song (`architecture.md` → "Auto-centre").
 5. **Done: the button.** `"albumstart"` in `ws.ts`'s `Command`; in `App`'s toolbar, at its right, Material's `album` icon, disabled offline or without a current song; a tap sends and calls `store.recentre()` (`architecture.md` → "Queue actions").
-6. **Smoke, then the iPhone.** No code expected; a bug found becomes its own fix commit before this one. Against the real MPD (playback control, `playid` by tapping a row, random and single are allowed; never the queue).
-   - **Harness:** `npm run build`, debug server on 127.0.0.1:8099 with `--music-url https://webmusic.wwared.com/`, headless Chromium per `development.md`, 390 × 844, `mobile: true`, touch emulation. A page script (`Page.addScriptToEvaluateOnNewDocument`) wraps `WebSocket` to log outgoing commands and incoming `state` messages with `performance.now()`, and a `requestAnimationFrame` loop records `.queue-list`'s `scrollTop` and `.queue-row.current`'s offset from the list's centre. Selectors: `[aria-label=Queue]` (to mini), `.album-start`, `[aria-label=Previous]`, `[aria-label=Next]`. Swipes and flings: `Input.dispatchTouchEvent` at x 195, starting inside the list (y 480). A reload needs a changed URL (`/?n`): a hash-only `Page.navigate` doesn't reload. Set modes with `mpc random on` / `mpc single on`, pause with `mpc pause`, move with `mpc next` or a row tap.
-   - **Already measured in step 5** (`architecture.md` → "Measurements" → "Queue actions"): mid-album with both modes on; a first entry playing with both on; a first entry playing with both off; disabled states. Not repeated unless something changed.
-   - **To do, each recording sent commands, pushes, `mpc status` before and after, and frames:**
-     - on a first entry, paused (`mpc pause`), random and single on: plays from 0:00, both off, one push, centred;
-     - an album over 100 entries, tapped near its end: the walk crosses windows; the group's first entry plays. Find one, and a group starting exactly at a block edge (position a multiple of 100), with a read-only scan: a Bun WS client requesting every block (`{"type":"queue",…}`, as in `ws.ts`) and reading the `start` flags, 1,759 blocks;
-     - a group starting at a block edge, tapped from its second entry: that edge entry plays;
-     - mid-fling (as step 4: fling from y 480, tap 120 ms in), the album button: the fling stops, the first entry centred; then previous and next the same way;
-     - centring paused by a swipe, then a natural song change (`mpc seek` to 3 s before the end, then wait): not centred until 15 s after the swipe.
-   - **Results:** append to `architecture.md` → "Measurements" → "Queue actions".
-   - **iPhone** (the user, home-screen app on the LAN; give them a checklist): the button's place and look beside the playlists button, the pressed and disabled looks; a tap mid-album plays the first entry with both modes off and centres it; the button, previous, next and a cover tap mid-fling stop the fling and centre (in Chromium a cover tap mid-fling was left ~28 px off, `architecture.md` → "Previous / next re-centre"; on iOS unchecked).
-   - **Then:** "Current state" gets the feature (a toolbar button bullet, and the live-queue line's re-centring), the milestone section is removed and "Open work" picks the next one.
+6. **Done: smoke against the real MPD.** Paused first entry, a 1,163-entry group (12 windows), groups starting at block edges, scrolled away, mid-fling, a natural song change while paused: all as designed (`architecture.md` → "Measurements" → "Queue actions, more cases"). It found one bug, fixed in its own commit: in Chromium a mid-fling album, previous, next or cover tap could leave the list 26–28 px off centre for good; now every pass re-centres from the halt until the list settles (`architecture.md` → "Cover, previous and next taps").
+7. **iPhone** (the user, home-screen app on the LAN, mini mode):
+   - the album button at the toolbar's right, its icon lined up with the durations' right edge, muted like the playlists button; the pressed look; dimmed offline;
+   - mid-album with random and single on: a tap plays the album's first entry from 0:00, both modes off, the list centred on it;
+   - on the first entry, playing: a tap turns the modes off without restarting the song;
+   - during a fling, one tap on the album button, previous, next or the cover: it acts (in Chromium that touch only stops the fling, with no `click`; iOS unchecked), the fling stops, the list rests centred, not a row's half off;
+   - a swipe right after any of these taps follows the finger.
+
+   Results go to `architecture.md` → "Measurements", as an "**Album button by hand**" paragraph after "Pinned covers by hand". If a tap during a fling only stops it, that's a design question (the toolbar is outside the list), not part of this milestone.
+
+8. **Final docs pass** (one commit, no code):
+   - "Current state": the opening line becomes "Now playing, the live queue, stored playlists and the album button are done and checked on phones."; after "Stored playlists", a bullet "**Album from the start:** a toolbar button, at its right, plays the current song's album group from its first entry with random and single off (repeat and the queue untouched) and centres it.";
+   - remove this milestone section;
+   - `architecture.md` already describes the feature as built, with no milestone or "planned" mentions left for it; only the iPhone paragraph above lands there;
+   - the next milestone is the user's pick from "Open work" and "Later".
 
 ## Open work
 
