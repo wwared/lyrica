@@ -73,6 +73,85 @@ Thin bridge between the frontend and `lyrica-mpd`.
   - **Over the WS** (release build, Bun client): request to reply 0.29 ms for 3 entries, 0.81 ms for 200 (30 KB). Worst case, a separate client fetching random 100-entry windows back to back, two in flight (~2000 windows/s, median 0.9 ms, 0 `null`): what lyrica adds after MPD's `idle` event, to the DOM in headless Chromium, rose from 0.44 to 1.41 ms median for pause / play (max 1.75) and from 0.82 to 1.93 ms for `next` (max 2.30), 12 each; the state push on the loaded connection itself came 0.7–1.6 ms after the event. The same load sent straight to MPD instead (2.5× the rate) raised them to 1.16 / 1.67 ms: most of the increase is MPD answering the idle connection's `status` and `currentsong` between window reads, not the WS loop. Windows stall only while MPD opens the next file (max 155 ms, during `next`).
   - **Loading stored playlists** (`replace_queue`, throwaway MPD 0.24.15, `.m3u` files, release build): 1,000 / 19,000 / 195,000 songs in 1–9 / 10–17 / 83–105 ms, the upper ends when clearing 195,000 entries first. MPD answers no one meanwhile: a second connection's `status` waited out the whole load each time. An `idle playlist` client got one `playlist` event per load (plus `player` when it stopped playback), and `status` right after already showed the new length: no empty queue in between, though the version moves by 2. Per-song cost is MPD's database lookup, which grows with directory width: with 195,000 lines into 4,000 sibling directories, `load` took 2.66 s and `playlistlength` 2.50 s (the ordinary 195,000 file: 105 / 79 ms). On the real MPD, `playlistlength` takes 1.9 / 17.4 / 19.2 s for its 19,288 / 175,905 / 195,193-song playlists, blocking `status` likewise, so loading them should take about as long, with MPD frozen for every client meanwhile (an estimate: the real queue is never replaced in development). `listplaylists`: 0.05 ms median.
   - **Failed loads** (throwaway): a missing name → `ACK [50@1] {load} No such playlist`, queue left empty; a playlist over `max_playlist_length` → `ACK [51@1] {load} Playlist is too large`, queue filled up to the limit; missing files inside a playlist are skipped without an error.
+  - **Queue search** (`playlistsearch`, MPD 0.24.0, same queue; MPD serves no one during a scan). Measured while designing search (see "Search (planned)").
+    - **`contains` vs regex**, full scans without a match: `contains` on title 125 ms, artist 85, album 143, file 351, `any` 1,640, title + artist + album + file 610–650; the same with regex (`=~`) 59–63 ms, `any` 126. Same positions as `contains` for 8 terms over those four fields, except non-ASCII case (`BJÖRK`: regex 0, `contains` 1) and ß (`contains` folds it to ss).
+    - **Byte mode:** `bj.rk` misses "Björk", `bj..rk` finds it, `[öÖ]` never matches. With `(*UTF)` in front: `BJÖRK` finds it, `Σ` 37 titles against `σ`'s 7, `STRASSE` misses "Straße"; +15 ms per scan.
+    - **Default fields** with `(*UTF)`, title, artist, albumartist, album, file: 88 ms, 77 with file first; without file 66; title + artist + album 56. `any` 142.
+    - **Several terms:** `AND` stops at the first false operand. Two words 82–91 ms; three, the first common, 113; a rare word then a negated one 82; a negated term first 140 (nearly every entry passes it), three negated first 263.
+    - **Windows:** `window 0:5` of a common term 1.2 ms (the scan stops once the window is full). `window k:k+1`: 0.1–42 ms up to the k-th match, a full scan (~60 ms) when there is none, 0.1 ms past the queue's length. 500 matches 1–60 ms, 165–680 KB (every tag of every match). Unwindowed, title `a` (110,600 matches): 5.2 s, 84 MB.
+    - **Missing:** `OR` (`'AND' expected`) and position filters (`Unknown filter type: pos`); `!((… !~ …) AND …)` works as `OR`. An invalid regex: `ACK … Error in regex at offset 1: missing closing parenthesis`; so is a `(*VERB)` past the start.
+    - **Counting** by bisection on `window k:k+1` (1,000, doubling, then halving), a second connection polling `status` every 5 ms: "love" 3,156 matches in 14 probes, 863 ms; "the" 47,646 in 22, 1,051 ms; "a" 174,202 in 26, 645 ms. Longest probe 67 ms; each `status` waited out one probe: median 34–61 ms, max 62.
+    - **Decomposed accents** (combining marks U+0300–036F): 5 titles and 5 paths, no artist or album.
+
+## Search (planned)
+
+Finds matches in the live queue with MPD's `playlistsearch` and centres the list on them one at a time, without playing them. Implementation steps are in `roadmap.md`; measurements under "Queue measurements" → "Queue search".
+
+### Behaviour
+
+- **Button:** Material's `search` icon in the toolbar's second slot, after the stored playlists button. The toolbar becomes one evenly spaced row of 44 px buttons (`justify-content: space-between`): with search, 8 in 352 px, icons 46.6 px apart at 390 px, 44.4 at 375; the first icon still starts at x 20, the last ends 20 px from the right. Disabled offline.
+- **Search mode:** the button turns the toolbar into `[✕][input][🔍]`, the input focused. Input: `type="search"`, 16 px font (iOS zooms in on smaller), `user-select: text`, `enterkeyhint="search"`, autocorrect, autocapitalize and spellcheck off.
+- **Submit:** Return or 🔍 closes the keyboard and runs the query; a blank query does nothing. The query stays in the input, editable, and 🔍 stays. Every submission, the same query included, replaces the matches, as if search mode had been left and entered again.
+- **Pill:** while a search is active, `( ▲  3 / 120  ▼ )` over the list's bottom edge. ▲ previous, ▼ next, wrapping at the ends. While the server works, the "Loading…" box's spinner in place of the count; the total reads `…` until counted.
+- **Room for the pill:** in search mode only, the list's content ends in empty space as tall as the pill's footprint, so the last row can be centred or rest above the pill.
+- **First match:** the first after the current song, wrapping to the queue's first; from the top with no current song.
+- **Focused match:** centred instantly, like auto-centring; never played. Matching rows (among the known matches) get a subtle background; the focused one `bg2` and yellow text, like the playlists dialog's selection.
+- **Auto-centring** is off for the whole of search mode: song changes move the highlight, not the list. Scrolling by hand is free; ▲▼ continue from the focused match. Tapping a row plays it; search mode stays.
+- **Queue changes** make the matches' positions stale: the next ▲▼ reruns the query and continues from the focused match's position in its direction.
+- **Errors and no matches:** a toast in the toolbar's toast spot (parse error, MPD's error such as an invalid regex, offline; "No matches"); search mode stays.
+- **Leaving:** ✕, Escape (desktop) or switching to full mode clears the query, restores the toolbar, resumes auto-centring and centres the current song, like a cover tap. Nothing persists.
+
+### Query language
+
+Phase 1 accepts plain words only; phase 2 the whole grammar, parsed with nom. Case-insensitive throughout, field names included.
+
+```
+query = term (spaces term)*
+term  = ["-"] [field ":"] value
+value = "^" atom | atom | "/" regex "/"
+atom  = word | '"' text '"'
+field = title | artist | albumartist | album | file | any
+```
+
+- **Terms** are joined by AND. A term matches when one of its fields does: its field, or the default fields `file`, `title`, `artist`, `albumartist`, `album` (never `any`). Different terms may match in different fields.
+- **Word:** substring (`love` finds "Glove"). **Quoted:** substring including spaces; `\"` and `\\` inside. **`^`:** starts with. **`/re/`:** MPD's PCRE2 regex, `\/` for `/`, other backslashes passed on.
+- **`-`** negates any whole term: none of its fields matches. Only in front: inside a value it is literal (`artist:-live` contains "-live").
+- **Plain text** where nothing else applies: an unknown prefix (`re:zero`), a lone `-` or `^`, `^/x/` (starts with "/x/"), a `/` not starting a term (`AC/DC`).
+- **Errors:** an unclosed `"` or `/`.
+
+| Query                          | Matches entries where                                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| `radiohead creep`              | a default field contains "radiohead" and one (maybe another) contains "creep"       |
+| `"no surprises"`               | a default field contains "no surprises"                                             |
+| `-live ^hello /world wide/`    | no default field contains "live", one starts with "hello", one matches `world wide` |
+| `artist:radiohead -album:live` | the artist contains "radiohead" and the album doesn't contain "live"                |
+| `-^the`                        | no default field starts with "the"                                                  |
+| `file:/\.flac$/`               | the path ends in ".flac"                                                            |
+| `re:zero`                      | a default field contains "re:zero"                                                  |
+
+### MPD filters
+
+- **Regex only** (`=~`, negated `!~`): 10× faster than `contains`. Words and quoted text become literals (every ASCII non-alphanumeric character backslashed), `^` prefixes `^`.
+- **`(*UTF)`** starts every regex, the user's too: MPD compiles regexes in byte mode, where case folding covers ASCII only and `.` is a byte; `(*UTF)` switches PCRE2 to UTF-8 with Unicode case folding (ö/Ö, σ/ς/Σ). Not covered: multi-character folding (ß ≠ ss), accents (bjork ≠ björk, as with `contains`), accents stored as combining marks (a typed "atún" misses those few entries). A user's `(*VERB)` is still valid right after ours.
+- **Several fields** (MPD 0.24 has no `OR`): `(!((file !~ 'r') AND (title !~ 'r') AND …))`; negated `((file !~ 'r') AND …)`; one field `(f =~ 'r')` or `(f !~ 'r')`. Default fields file first (77 ms against 88).
+- **Order:** `AND` stops at the first false operand, so positive terms go first, longest literal first (likely the most selective), negated ones last.
+- **Quoting, two levels:** the value in single quotes inside the filter, the filter in double quotes as the command's argument; each level backslash-escapes `\` and its quote, so a regex backslash is four on the wire.
+
+### Server
+
+- **`lyrica-mpd`:** `playlistsearch FILTER window START:END` in a command list after `status`, so the queue version belongs to the result (MPD serves no one else during a list); only `Pos` kept.
+- **Messages** (draft): client → `{"type":"search","id":n,"query":s,"from":p|null}` starts a search, replacing the connection's previous one (`from`: the current song's position). Server → `{"type":"matches","id","version","start":k,"positions":[…]}`, a chunk: matches k to k + 499 in queue order, k a multiple of 500; shorter means the last. Client → `{"type":"matches","id","query","start":k}` fetches another chunk. Server → `{"type":"total","id","total":n}` once counted; `{"type":"searchfailed","id","error":s}` (parse error, MPD's error, offline); `{"type":"searchend"}` from the client drops its search.
+- **Scheduling:** the search runs in the queue task (`serve_reads`), one MPD command per step; before each step, pending windows and listings go first, so they wait at most one probe. One search per connection; a new search, `searchend` or a closed socket drops it. A version change between steps ends it as stale.
+- **First match:** chunk 0 first; shorter than 500, everything is known. Otherwise probes (`window k:k+1`, the k-th match's position), k picked by interpolation from the known (index, position) pairs, falling back to bisection, find the first match after `from`, then its chunk. None after it: chunk 0's first.
+- **Count:** the same probes find the first k without a match, after the first chunk is sent, with a gap between probes.
+- **Limits:** target ≤ 65 ms per MPD command, ceiling 100 ms; anything over the ceiling is investigated, simplified or removed. Known: a one-word default scan 77 ms (over the target), a negated-only query 140–263 ms and `any` 142 ms (over the ceiling).
+
+### Frontend
+
+- **`search.ts`** (Vitest): pure arithmetic: a match index's chunk, next / previous with wrap, the first index after `from`, the count text.
+- **`App`** holds the search state (query, id, version, chunks, total, focused index, pending); the toolbar renders either its buttons or the search bar; the pill sits in the queue area.
+- **Store / list:** `reveal(position)`, like `top()` and `recentre()`, centres a row; search mode pauses auto-centring until it ends and adds the room for the pill; rows ask whether they are a match or the focused one.
+- **Reused:** the toolbar toast, the loading spinner.
 
 ## Frontend (web/)
 
