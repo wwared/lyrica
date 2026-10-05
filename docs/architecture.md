@@ -84,6 +84,7 @@ Thin bridge between the frontend and `lyrica-mpd`.
     - **Counting** by bisection on `window k:k+1` (1,000, doubling, then halving), a second connection polling `status` every 5 ms: "love" 3,156 matches in 14 probes, 863 ms; "the" 47,646 in 22, 1,051 ms; "a" 174,202 in 26, 645 ms. Longest probe 67 ms; each `status` waited out one probe: median 34–61 ms, max 62.
     - **Decomposed accents** (combining marks U+0300–036F): 5 titles and 5 paths, no artist or album.
     - **Through `search_queue`** (release build, one word over the five default fields, file first, `!(… !~ … AND …)`, 5 runs, medians): "love" (3,156 matches) chunks `0:500` / `500:1000` / `1000:1500` / `1500:2000` 11.9 / 25.5 / 48.8 / 61.4 ms; probes `0:1` 0.1, `100:101` 1.9, `1000:1001` 24.6, `3000:3001` 76.6, `3155:3156` 81.0, past the last match 79–81 ms. "the" chunks 2.3–3.7 ms, probe `10000:10001` 11.8, past its matches 66.7. No match ("zzqx"): every window 78–80 ms. The bare protocol took the same within noise ("love" `0:500` 12.5 ms for 281 KB, "the" `0:500` 2.0 for 190 KB): picking the positions out of the full tags costs at most ~0.3 ms.
+    - **Through `compile`** (phase 1, release build, `window 0:500`, best of 5): `BJÖRK` and `björk` the same entry ("Plaid feat. Björk"); `Σ` and `σ` the same 76 positions; `it's` 240 ("For What It's Worth" first), `ac/dc` 7, `mr.` only entries with "Mr."; `radiohead creep` and `creep radiohead` the same entry, 79.7 ms each, no slower than one word: the second term runs only on the first's matches. Full scans 76–83 ms, "love" `0:500` 10.1, as through `search_queue` with the same filter.
 
 ## Search (planned)
 
@@ -105,7 +106,7 @@ Finds matches in the live queue with MPD's `playlistsearch` and centres the list
 
 ### Query language
 
-Phase 1 accepts plain words only; phase 2 the whole grammar, parsed with nom. Case-insensitive throughout, field names included.
+Phase 1 (done, `query.rs` → `compile`) accepts plain words only, split on Unicode whitespace; a blank query is the only error ("Empty search"). Phase 2 adds the whole grammar, parsed with nom. Case-insensitive throughout, field names included.
 
 ```
 query = term (spaces term)*
@@ -136,7 +137,7 @@ field = title | artist | albumartist | album | file | any
 - **Regex only** (`=~`, negated `!~`): 10× faster than `contains`. Words and quoted text become literals (every ASCII non-alphanumeric character backslashed), `^` prefixes `^`.
 - **`(*UTF)`** starts every regex, the user's too: MPD compiles regexes in byte mode, where case folding covers ASCII only and `.` is a byte; `(*UTF)` switches PCRE2 to UTF-8 with Unicode case folding (ö/Ö, σ/ς/Σ). Not covered: multi-character folding (ß ≠ ss), accents (bjork ≠ björk, as with `contains`), accents stored as combining marks (a typed "atún" misses those few entries). A user's `(*VERB)` is still valid right after ours.
 - **Several fields** (MPD 0.24 has no `OR`): `(!((file !~ 'r') AND (title !~ 'r') AND …))`; negated `((file !~ 'r') AND …)`; one field `(f =~ 'r')` or `(f !~ 'r')`. Default fields file first (77 ms against 88).
-- **Order:** `AND` stops at the first false operand, so positive terms go first, longest literal first (likely the most selective), negated ones last.
+- **Order:** `AND` stops at the first false operand, so positive terms go first, longest literal first (likely the most selective; characters, ties in query order), negated ones last.
 - **Quoting, two levels:** the value in single quotes inside the filter, the filter in double quotes as the command's argument; each level backslash-escapes `\` and its quote, so a regex backslash is four on the wire. An apostrophe in a word: `\'` in the regex, `\\\'` in the filter, `\\\\\\'` on the wire (found "It's a Chase!"; four backslashes end the value early). Quoted keywords (`"window"`) and a lone operand in parentheses (`((title =~ 'x'))`) are accepted.
 
 ### Server

@@ -5,6 +5,8 @@
 
 mod assets;
 mod bridge;
+#[cfg_attr(not(test), expect(dead_code, reason = "used from step 4 of search"))]
+mod query;
 mod ws;
 
 use std::{error::Error, net::SocketAddr, sync::Arc};
