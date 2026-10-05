@@ -144,7 +144,7 @@ field = title | artist | albumartist | album | file | any
 - **Scheduling:** the search runs in the queue task (`serve_reads`), one MPD command per step; before each step, pending windows and listings go first, so they wait at most one probe. One search per connection; a new search, `searchend` or a closed socket drops it. A version change between steps ends it as stale.
 - **First match:** chunk 0 first; shorter than 500, everything is known. Otherwise probes (`window k:k+1`, the k-th match's position), k picked by interpolation from the known (index, position) pairs, falling back to bisection, find the first match after `from`, then its chunk. None after it: chunk 0's first.
 - **Count:** the same probes find the first k without a match, after the first chunk is sent, with a gap between probes.
-- **Limits:** target ≤ 65 ms per MPD command, ceiling 100 ms; anything over the ceiling is investigated, simplified or removed. Known: a one-word default scan 77 ms (over the target), a negated-only query 140–263 ms and `any` 142 ms (over the ceiling).
+- **Limits:** target ≤ 65 ms per MPD command, ceiling 100 ms; anything over the ceiling is investigated, simplified or removed, except phase 2 query shapes kept after trying them by hand (slower searches traded for a more powerful language). Known: a one-word default scan 77 ms (over the target), a negated-only query 140–263 ms and `any` 142 ms (over the ceiling).
 
 ### Frontend
 
