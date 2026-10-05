@@ -20,7 +20,12 @@ Now playing, the live queue and stored playlists are done and checked on phones.
 A toolbar button, at its right, that plays the current song's album from its first entry in the queue with random and single off (done by hand today). Repeat is left alone; the queue isn't changed. One commit per step; docs move with each.
 
 1. **Done: grouping rule on the server, one copy.** `same_group` in `bridge.rs` sets each window entry's `start` flag, read with the entry before the window; the frontend requests exact blocks and only reads the flag (`architecture.md` → "Album grouping").
-2. **`lyrica-mpd`: one command list.** A `Client` method sending `random 0` and `single 0`, then `playid` when given an id, as one command list. Unit test against the mock server.
+2. **`lyrica-mpd`: one command list.** In `crates/mpd/src/client.rs`:
+   - `pub async fn play_in_order(&mut self, id: Option<u32>) -> Result<()>`: one `run_list` of `random "0"`, `single "0"`, then `playid "<id>"` when `id` is `Some`. Doc comment: turns random and single off, then plays entry `id` from its start; not a transaction (a gone id fails at `ACK` index 2, the modes stay off).
+   - Built like `replace_queue`; the id's string as in `play_id`. Not wired to the server yet (step 3).
+   - Test with `fake`, like `replace_queue`'s: both forms, then `playid` rejected (`ACK [50@2] {playid} No such song` → `Error::Ack` with that index) and a `ping` still answered.
+   - Smoke: a throwaway program (not committed) calling it on the real MPD, with and without an id (both allowed: modes and playback); `status` then shows random and single off, and the id playing from 0:00.
+   - Docs (`architecture.md` → "`lyrica-mpd`"): the commands in "Currently" and "Command lists".
 3. **Server: `{"type":"albumstart"}`.** A `Command` on the command connection, in order with the others (a `next` sent just before is seen), inside the retry helper:
    - Fresh `status`: play state, current position. No current song: nothing.
    - Walk back from the current position in windows of 100, converting with `Entry::new` and comparing with `same_group`, to the group's first entry. Typically one window; worst case, one group spanning the queue, ~1,000 windows (~0.8 s); no cap.
