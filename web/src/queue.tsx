@@ -112,6 +112,10 @@ export function QueueList({
     let paused = false;
     let resume = 0;
     let unhalt = 0;
+    // From a halt until the list settles. Chromium applies a fling's scroll
+    // deltas already in flight on top of a `scrollTop` write, up to two frames
+    // late; while set, any scroll the user didn't make re-centres.
+    let halting = false;
     const place = (next: Placement) => {
       v.anchor = next.anchor;
       v.scrollTop = next.scrollTop;
@@ -127,7 +131,7 @@ export function QueueList({
     const pass = () => {
       frame = 0;
       v.scrollTop = scrolled(el);
-      if (v.moved) {
+      if (v.moved || halting) {
         v.moved = false;
         v.stale = true;
         if (store.shown && !paused) centred();
@@ -220,6 +224,8 @@ export function QueueList({
     // `overflow: hidden` ends it. Two frames: the first runs before this one's
     // paint.
     const halt = () => {
+      halting = true;
+      unsettle();
       el.style.overflowY = "hidden";
       cancelAnimationFrame(unhalt);
       unhalt = requestAnimationFrame(() => {
@@ -282,6 +288,7 @@ export function QueueList({
       wait();
     };
     const settled = () => {
+      halting = false;
       if (touches > 0) return;
       const next = reanchor(v.anchor, scrolled(el), v.length);
       if (next !== null) {
