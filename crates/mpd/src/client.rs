@@ -76,10 +76,6 @@ impl Client {
         self.run("password", &[password]).await.map(drop)
     }
 
-    pub async fn ping(&mut self) -> Result<()> {
-        self.run("ping", &[]).await.map(drop)
-    }
-
     pub async fn status(&mut self) -> Result<Status> {
         Status::from_pairs(self.run("status", &[]).await?)
     }
@@ -423,7 +419,6 @@ mod tests {
         let songs = client.queue_range(100..400).await.unwrap();
         assert_eq!(songs.len(), 300);
         assert_eq!(songs[0].file, "dir/100.flac");
-        assert_eq!(songs[299].position, Some(399));
         assert_eq!(songs[299].id, Some(400));
         assert!(client.queue_range(5..5).await.unwrap().is_empty());
         assert!(matches!(
@@ -439,7 +434,7 @@ mod tests {
     async fn ack_keeps_connection_usable() {
         let (addr, server) = fake(&[
             ("play\n", "ACK [2@0] {play} Bad song index\n"),
-            ("ping\n", "OK\n"),
+            ("next\n", "OK\n"),
         ])
         .await;
         let mut client = Client::connect(addr).await.unwrap();
@@ -455,7 +450,7 @@ mod tests {
             ),
             other => panic!("{other:?}"),
         }
-        client.ping().await.unwrap();
+        client.next().await.unwrap();
         drop(client);
         server.await.unwrap();
     }
@@ -483,7 +478,7 @@ mod tests {
         let mut client = Client::connect(addr).await.unwrap();
         let idle = tokio::time::timeout(Duration::from_millis(50), client.idle(&[])).await;
         assert!(idle.is_err());
-        assert!(matches!(client.ping().await, Err(Error::Broken)));
+        assert!(matches!(client.next().await, Err(Error::Broken)));
         drop(client);
         server.await.unwrap();
     }
@@ -516,7 +511,7 @@ mod tests {
             ("clear\n", ""),
             ("load \"gone\"\n", ""),
             ("command_list_end\n", "ACK [50@1] {load} No such playlist\n"),
-            ("ping\n", "OK\n"),
+            ("next\n", "OK\n"),
         ])
         .await;
         let mut client = Client::connect(addr).await.unwrap();
@@ -533,7 +528,7 @@ mod tests {
             ),
             other => panic!("{other:?}"),
         }
-        client.ping().await.unwrap();
+        client.next().await.unwrap();
         drop(client);
         server.await.unwrap();
     }
@@ -555,7 +550,7 @@ mod tests {
             ("single \"0\"\n", ""),
             ("playid \"7\"\n", ""),
             ("command_list_end\n", "ACK [50@2] {playid} No such song\n"),
-            ("ping\n", "OK\n"),
+            ("next\n", "OK\n"),
         ])
         .await;
         let mut client = Client::connect(addr).await.unwrap();
@@ -573,7 +568,7 @@ mod tests {
             ),
             other => panic!("{other:?}"),
         }
-        client.ping().await.unwrap();
+        client.next().await.unwrap();
         drop(client);
         server.await.unwrap();
     }
@@ -590,13 +585,13 @@ mod tests {
                 )
             })
             .collect();
-        let found = format!("playlist: 2\nplaylistlength: 175872\nduration: 247.106\n{found}OK\n");
+        let found = format!("playlist: 2\nplaylistlength: 1000\nduration: 1.5\n{found}OK\n");
         let script = vec![
             ("command_list_begin\n", ""),
             ("status\n", ""),
             (
                 concat!(
-                    r#"playlistsearch "((title =~ '(*UTF)it\\\\\\'s a') AND (file !~ 'ac\\\\/dc'))" "window" "0:500""#,
+                    r#"playlistsearch "((title =~ '(*UTF)it\\\\\\'s a') AND (file !~ 'rock\\\\/pop'))" "window" "0:500""#,
                     "\n"
                 ),
                 "",
@@ -620,7 +615,7 @@ mod tests {
                 "playlist: 3\nplaylistlength: 10\n\
                  ACK [2@1] {playlistsearch} Error in regex at offset 1: missing closing parenthesis\n",
             ),
-            ("ping\n", "OK\n"),
+            ("next\n", "OK\n"),
         ];
         let (addr, server) = fake(script.leak()).await;
         let mut client = Client::connect(addr).await.unwrap();
@@ -631,11 +626,11 @@ mod tests {
         };
         let filter = Filter::And(vec![
             regex(Tag::Title, r"(*UTF)it\'s a", false),
-            regex(Tag::File, r"ac\/dc", true),
+            regex(Tag::File, r"rock\/pop", true),
         ]);
         let matches = client.search_queue(&filter, 0..500).await.unwrap();
         assert_eq!(matches.queue_version, 2);
-        assert_eq!(matches.queue_length, 175872);
+        assert_eq!(matches.queue_length, 1000);
         assert_eq!(matches.positions.len(), 300);
         assert_eq!(matches.positions[299], 897);
         let none = client
@@ -655,20 +650,20 @@ mod tests {
             client.search_queue(&Filter::And(vec![]), 0..1).await,
             Err(Error::InvalidArgument)
         ));
-        client.ping().await.unwrap();
+        client.next().await.unwrap();
         drop(client);
         server.await.unwrap();
     }
 
     #[tokio::test]
     async fn replace_queue_rejects_newline_unsent() {
-        let (addr, server) = fake(&[("ping\n", "OK\n")]).await;
+        let (addr, server) = fake(&[("next\n", "OK\n")]).await;
         let mut client = Client::connect(addr).await.unwrap();
         assert!(matches!(
             client.replace_queue("a\nclear").await,
             Err(Error::InvalidArgument)
         ));
-        client.ping().await.unwrap();
+        client.next().await.unwrap();
         drop(client);
         server.await.unwrap();
     }

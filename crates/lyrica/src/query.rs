@@ -338,14 +338,14 @@ mod tests {
     #[test]
     fn words_split_on_unicode_whitespace() {
         assert_eq!(
-            terms(" \t radiohead\n\r\u{3000}creep\u{a0} "),
-            [contains("radiohead"), contains("creep")]
+            terms(" \t river\n\r\u{3000}night\u{a0} "),
+            [contains("river"), contains("night")]
         );
     }
 
     #[test]
     fn quoted_text_keeps_spaces_and_unescapes_quote_and_backslash() {
-        assert_eq!(terms(r#""no  surprises""#), [contains("no  surprises")]);
+        assert_eq!(terms(r#""slow  river""#), [contains("slow  river")]);
         assert_eq!(terms(r#""a\"b""#), [contains(r#"a"b"#)]);
         assert_eq!(terms(r#""a\\b""#), [contains(r"a\b")]);
         assert_eq!(terms(r#""a\\""#), [contains(r"a\")]);
@@ -376,7 +376,7 @@ mod tests {
     #[test]
     fn caret_starts_with_a_word_or_quoted_text() {
         assert_eq!(terms("^hello"), [starts("hello")]);
-        assert_eq!(terms(r#"^"no surprises""#), [starts("no surprises")]);
+        assert_eq!(terms(r#"^"slow river""#), [starts("slow river")]);
         assert_eq!(terms("^/x/"), [starts("/x/")]);
         assert_eq!(terms("^-x"), [starts("-x")]);
         assert_eq!(terms("^^x"), [starts("^x")]);
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn unknown_or_valueless_field_is_plain_text() {
-        assert_eq!(terms("re:zero"), [contains("re:zero")]);
+        assert_eq!(terms("vol:2"), [contains("vol:2")]);
         assert_eq!(terms("artists:x"), [contains("artists:x")]);
         assert_eq!(terms("ärtist:x"), [contains("ärtist:x")]);
         assert_eq!(terms("foo:/x/"), [contains("foo:/x/")]);
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn quote_or_slash_inside_a_word_is_plain_text() {
-        assert_eq!(terms("AC/DC"), [contains("AC/DC")]);
+        assert_eq!(terms("rock/pop"), [contains("rock/pop")]);
         assert_eq!(terms("a/b/"), [contains("a/b/")]);
         assert_eq!(terms(r#"foo"bar"#), [contains(r#"foo"bar"#)]);
         assert_eq!(terms(r#"a""#), [contains(r#"a""#)]);
@@ -547,12 +547,12 @@ mod tests {
     #[test]
     fn literals_longest_first_then_regexes_then_negated() {
         assert_eq!(
-            text(r#"-zz /b/ ab artist:creep /a/ ^radiohead -y "x y z w""#),
+            text(r#"-zz /b/ ab artist:night /a/ ^someband -y "x y z w""#),
             format!(
                 "({} AND {} AND {} AND {} AND {} AND {} AND {} AND {})",
-                term_text("^radiohead"),
+                term_text("^someband"),
                 term_text(r"x\\ y\\ z\\ w"),
-                "(artist =~ '(*UTF)creep')",
+                "(artist =~ '(*UTF)night')",
                 term_text("ab"),
                 default_text(false, "(*UTF)(*UCP)(*LIMIT_MATCH=10000)b"),
                 default_text(false, "(*UTF)(*UCP)(*LIMIT_MATCH=10000)a"),
@@ -576,7 +576,7 @@ mod tests {
     fn literals_escape_ascii_punctuation() {
         // Regex `it\'s`; the filter's quoting doubles the backslash and adds one for `'`.
         assert_eq!(text("it's"), term_text(r"it\\\'s"));
-        assert_eq!(text("ac/dc"), term_text(r"ac\\/dc"));
+        assert_eq!(text("rock/pop"), term_text(r"rock\\/pop"));
         assert_eq!(text(r"a\b"), term_text(r"a\\\\b"));
         assert_eq!(
             text("a.b*c?(d)[e]{f}|^$+"),
@@ -587,9 +587,9 @@ mod tests {
 
     #[test]
     fn literals_keep_letters_digits_and_non_ascii() {
-        assert_eq!(text("BJÖRK"), term_text("BJÖRK"));
+        assert_eq!(text("MÖBEL"), term_text("MÖBEL"));
         assert_eq!(text("Σ"), term_text("Σ"));
-        assert_eq!(text("マクロス82"), term_text("マクロス82"));
+        assert_eq!(text("ことば12"), term_text("ことば12"));
         assert_eq!(text("a—b"), term_text("a—b"));
     }
 
@@ -599,10 +599,10 @@ mod tests {
         let user = "(*UTF)(*UCP)(*LIMIT_MATCH=10000)";
         for (query, filter) in [
             (
-                "radiohead creep",
-                format!("({} AND {})", term_text("radiohead"), term_text("creep")),
+                "river night",
+                format!("({} AND {})", term_text("river"), term_text("night")),
             ),
-            (r#""no surprises""#, term_text(r"no\\ surprises")),
+            (r#""slow river""#, term_text(r"slow\\ river")),
             (
                 "-live ^hello /world wide/",
                 format!(
@@ -613,8 +613,8 @@ mod tests {
                 ),
             ),
             (
-                "artist:radiohead -album:live",
-                "((artist =~ '(*UTF)radiohead') AND (album !~ '(*UTF)live'))".into(),
+                "artist:someband -album:live",
+                "((artist =~ '(*UTF)someband') AND (album !~ '(*UTF)live'))".into(),
             ),
             ("-^the", default_text(true, "(*UTF)^the")),
             (r"file:/\.flac$/", format!(r"(file =~ '{user}\\.flac$')")),
@@ -622,7 +622,7 @@ mod tests {
                 "/(?-i)LOVE/",
                 default_text(false, &format!("{user}(?-i)LOVE")),
             ),
-            ("re:zero", term_text(r"re\\:zero")),
+            ("vol:2", term_text(r"vol\\:2")),
         ] {
             assert_eq!(text(query), filter, "{query}");
         }

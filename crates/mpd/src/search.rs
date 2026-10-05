@@ -157,8 +157,8 @@ mod tests {
     #[test]
     fn renders_filters() {
         assert_eq!(
-            regex(Tag::AlbumArtist, "(*UTF)björk", false).to_string(),
-            "(albumartist =~ '(*UTF)björk')"
+            regex(Tag::AlbumArtist, "(*UTF)möbel", false).to_string(),
+            "(albumartist =~ '(*UTF)möbel')"
         );
         assert_eq!(
             Filter::Not(Box::new(regex(Tag::Any, "x", true))).to_string(),
@@ -201,17 +201,17 @@ mod tests {
     #[test]
     fn keeps_status_before_songs_and_positions() {
         let matches = parse(
-            "playlist: 2\nplaylistlength: 175872\nduration: 247.106\n\
-             file: a.mp3\nduration: 102.008\nplaylist: 9\nPos: 116\nId: 117\n\
-             file: b.mp3\nPos: 180\nplaylistlength: 1",
+            "playlist: 2\nplaylistlength: 1000\nduration: 1.5\n\
+             file: a.mp3\nduration: 2.5\nplaylist: 9\nPos: 10\nId: 11\n\
+             file: b.mp3\nPos: 20\nplaylistlength: 1",
         )
         .unwrap();
         assert_eq!(
             matches,
             QueueMatches {
                 queue_version: 2,
-                queue_length: 175872,
-                positions: vec![116, 180],
+                queue_length: 1000,
+                positions: vec![10, 20],
             }
         );
         assert!(

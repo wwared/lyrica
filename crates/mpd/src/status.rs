@@ -132,16 +132,16 @@ mod tests {
     fn stopped() {
         let status = parse(
             "volume: 100\nrepeat: 1\nrandom: 1\nsingle: 0\nconsume: 0\npartition: default\n\
-             playlist: 2\nplaylistlength: 175872\nmixrampdb: 0\nstate: stop\n\
-             lastloadedplaylist: nonash\nsong: 40609\nsongid: 40610\nnextsong: 29770\nnextsongid: 29771",
+             playlist: 2\nplaylistlength: 1000\nmixrampdb: 0\nstate: stop\n\
+             lastloadedplaylist: mylist\nsong: 41\nsongid: 42\nnextsong: 7\nnextsongid: 8",
         )
         .unwrap();
         assert_eq!(
             status,
             Status {
                 state: State::Stop,
-                song: Some(40609),
-                song_id: Some(40610),
+                song: Some(41),
+                song_id: Some(42),
                 elapsed: None,
                 duration: None,
                 volume: Some(100),
@@ -149,7 +149,7 @@ mod tests {
                 repeat: true,
                 single: Single::Off,
                 queue_version: 2,
-                queue_length: 175872,
+                queue_length: 1000,
             }
         );
     }
@@ -158,12 +158,12 @@ mod tests {
     fn playing() {
         let status = parse(
             "playlist: 7\nplaylistlength: 3\nstate: play\nsong: 1\nsongid: 2\n\
-             time: 12:306\nelapsed: 12.345\nbitrate: 256\nduration: 305.784\naudio: 44100:f:2",
+             time: 12:200\nelapsed: 12.345\nbitrate: 256\nduration: 200.250\naudio: 44100:f:2",
         )
         .unwrap();
         assert_eq!(status.state, State::Play);
         assert_eq!(status.elapsed, Some(Duration::from_millis(12_345)));
-        assert_eq!(status.duration, Some(Duration::from_millis(305_784)));
+        assert_eq!(status.duration, Some(Duration::from_millis(200_250)));
         assert_eq!(
             parse("playlist: 7\nplaylistlength: 3\nstate: play\nsingle: oneshot\nrepeat: 0")
                 .unwrap()

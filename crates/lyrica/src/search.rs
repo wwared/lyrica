@@ -568,7 +568,7 @@ mod tests {
         *seed
     }
 
-    const LENGTH: u32 = 175_872;
+    const LENGTH: u32 = 180_000;
 
     /// Match sets of every shape: dense, sparse, clustered, chunk-sized.
     fn layouts(seed: &mut u64) -> Vec<Vec<u32>> {
@@ -650,21 +650,21 @@ mod tests {
     #[test]
     fn interpolation_reads_few_chunks_on_even_spreads() {
         let length = LENGTH;
-        // "love": 3,156 matches, one per ~56 positions.
-        let love: Vec<u32> = (0..3156).map(|i| i * 55 + i % 7).collect();
-        // "the": 47,646, one per ~3.7.
-        let the: Vec<u32> = (0..47_646u32).map(|i| i * 37 / 10).collect();
+        // A common word: ~3k matches, one per ~60 positions.
+        let common: Vec<u32> = (0..3000).map(|i| i * 60 + i % 7).collect();
+        // A very common word: ~50k, one per ~3.6.
+        let very_common: Vec<u32> = (0..50_000u32).map(|i| i * 36 / 10).collect();
         for (positions, from) in [
-            (&love, 30_000),
-            (&love, 90_000),
-            (&love, 170_000),
-            (&the, 100_000),
+            (&common, 30_000),
+            (&common, 90_000),
+            (&common, 170_000),
+            (&very_common, 100_000),
         ] {
             let (first, reads) = probe(positions, length, from);
             assert_eq!(first, expected(positions, from));
             assert!(reads.len() <= 2, "{reads:?} from {from}");
         }
-        for positions in [&love, &the] {
+        for positions in [&common, &very_common] {
             let (_, reads) = count(positions, length, &[]);
             assert!(reads.len() <= 3, "{reads:?}");
         }

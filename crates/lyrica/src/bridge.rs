@@ -923,8 +923,8 @@ mod tests {
     fn folder_url_escapes_each_segment() {
         let m = "https://m/";
         assert_eq!(
-            folder(m, "Röyksopp/A, B #1 [x?]/50% (ok)/01 t.flac").unwrap(),
-            "https://m/R%C3%B6yksopp/A%2C%20B%20%231%20%5Bx%3F%5D/50%25%20%28ok%29/"
+            folder(m, "Möbel/A, B #1 [x?]/50% (ok)/01 t.flac").unwrap(),
+            "https://m/M%C3%B6bel/A%2C%20B%20%231%20%5Bx%3F%5D/50%25%20%28ok%29/"
         );
         assert_eq!(folder(m, "a-b_c.d~/t.mp3").unwrap(), "https://m/a-b_c.d~/");
         assert_eq!(folder(m, "top.mp3").unwrap(), m);
@@ -940,7 +940,6 @@ mod tests {
             album: None,
             track: None,
             duration: None,
-            position: None,
             id: None,
         }
     }

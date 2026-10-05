@@ -19,8 +19,6 @@ pub struct Song {
     /// `None` also when the tag isn't a plain number.
     pub track: Option<u32>,
     pub duration: Option<Duration>,
-    /// Queue position.
-    pub position: Option<u32>,
     pub id: Option<u32>,
 }
 
@@ -73,7 +71,6 @@ struct Fields {
     track: Option<u32>,
     track_seen: bool,
     duration: Option<Duration>,
-    position: Option<u32>,
     id: Option<u32>,
 }
 
@@ -91,7 +88,6 @@ impl Fields {
                 self.track = value.parse().ok();
             }
             "duration" => self.duration = Some(seconds(key, value)?),
-            "Pos" => self.position = Some(field(key, value)?),
             "Id" => self.id = Some(field(key, value)?),
             _ => {}
         }
@@ -107,7 +103,6 @@ impl Fields {
             album: self.album,
             track: self.track,
             duration: self.duration,
-            position: self.position,
             id: self.id,
         })
     }
@@ -133,24 +128,23 @@ mod tests {
     #[test]
     fn current_song() {
         let song = parse(
-            "file: FELT/00 Puppet in the Dark.m4a\nLast-Modified: 2025-05-14T21:34:59Z\n\
-             Format: 44100:f:2\nArtist: FELT\nArtist: Other\nAlbum: FELT Special Page Contents\n\
-             Title: Puppet in the Dark\nTrack: 3\nTrack: 4\nDate: 2021\nAlbumArtist: FELT\nTime: 306\n\
-             duration: 305.784\nPos: 40609\nId: 40610",
+            "file: Artist A/Album A/01 Song A.flac\nLast-Modified: 2020-01-01T00:00:00Z\n\
+             Format: 44100:f:2\nArtist: Artist A\nArtist: Other\nAlbum: Album A\n\
+             Title: Song A\nTrack: 3\nTrack: 4\nDate: 2000\nAlbumArtist: Artist A\nTime: 200\n\
+             duration: 200.250\nPos: 41\nId: 42",
         )
         .unwrap();
         assert_eq!(
             song,
             Some(Song {
-                file: "FELT/00 Puppet in the Dark.m4a".into(),
-                title: Some("Puppet in the Dark".into()),
-                artist: Some("FELT".into()),
-                album_artist: Some("FELT".into()),
-                album: Some("FELT Special Page Contents".into()),
+                file: "Artist A/Album A/01 Song A.flac".into(),
+                title: Some("Song A".into()),
+                artist: Some("Artist A".into()),
+                album_artist: Some("Artist A".into()),
+                album: Some("Album A".into()),
                 track: Some(3),
-                duration: Some(Duration::from_millis(305_784)),
-                position: Some(40609),
-                id: Some(40610),
+                duration: Some(Duration::from_millis(200_250)),
+                id: Some(42),
             })
         );
     }
@@ -188,21 +182,20 @@ mod tests {
                 album: None,
                 track: None,
                 duration: None,
-                position: Some(8),
                 id: Some(9),
             }
         );
         assert_eq!(songs[2].artist.as_deref(), Some("C"));
         assert_eq!(songs[2].track, Some(3));
         assert_eq!(songs[2].duration, Some(Duration::from_millis(1500)));
-        assert_eq!(songs[2].position, Some(9));
+        assert_eq!(songs[2].id, Some(10));
         assert!(parse_list("").unwrap().is_empty());
     }
 
     #[test]
     fn song_list_rejects_bad_fields() {
         assert!(matches!(
-            parse_list("file: a\nPos: 1\nfile: b\nPos: x"),
+            parse_list("file: a\nId: 1\nfile: b\nId: x"),
             Err(Error::Protocol(_))
         ));
     }
