@@ -40,10 +40,20 @@ export type Config = {
 /**
  * `random`, `repeat` and `single` toggle the mode; `volume` sets MPD's;
  * `seek` jumps to `position` seconds in the current song; `playid` plays the
- * queue entry with that id.
+ * queue entry with that id; `albumstart` plays the current song's album group
+ * in order from its first entry, random and single off.
  */
 export type Command =
-  | { type: "previous" | "toggle" | "next" | "random" | "repeat" | "single" }
+  | {
+      type:
+        | "previous"
+        | "toggle"
+        | "next"
+        | "random"
+        | "repeat"
+        | "single"
+        | "albumstart";
+    }
   | { type: "volume"; volume: number }
   | { type: "seek"; position: number }
   | { type: "playid"; id: number };

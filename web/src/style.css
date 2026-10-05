@@ -109,7 +109,8 @@ body {
 }
 
 /* Fixed height, so the list never moves when buttons come or go. Positioned:
-   holds the toast. The first icon lines up with the rows' track column. */
+   holds the toast. The first icon lines up with the rows' track column, the
+   last with the durations' right edge. */
 .toolbar {
   position: relative;
   flex: none;
@@ -139,6 +140,10 @@ body {
 
 .toolbar button:disabled {
   opacity: 0.5;
+}
+
+.toolbar .album-start {
+  margin-left: auto;
 }
 
 .toolbar svg,

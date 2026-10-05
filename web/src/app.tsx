@@ -105,7 +105,20 @@ export function App() {
   return (
     <main class={mini ? "app mini" : "app"}>
       <section class="queue" aria-hidden={!mini}>
-        <div class="toolbar">{playlists}</div>
+        <div class="toolbar">
+          {playlists}
+          <button
+            class="album-start"
+            aria-label="Play album from the start"
+            disabled={disabled || snapshot.queue?.id == null}
+            onClick={() => {
+              send({ type: "albumstart" });
+              store.recentre();
+            }}
+          >
+            <Icon path={ALBUM} />
+          </button>
+        </div>
         {queueList}
       </section>
       <section class="now-playing" ref={nowPlaying}>
@@ -505,6 +518,9 @@ const HEADPHONES =
 // Material Icons (Apache 2.0): volume_up.
 const VOLUME =
   "M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z";
+// Material Icons (Apache 2.0): album.
+const ALBUM =
+  "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z";
 // Material Icons (Apache 2.0): shuffle, looks_one (outlined), repeat.
 const MODES = [
   {
