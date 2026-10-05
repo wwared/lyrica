@@ -3,6 +3,7 @@ name = "lyrica"
 description = "Mobile-first PWA client for MPD (server + embedded frontend)"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

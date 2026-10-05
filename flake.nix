@@ -86,7 +86,10 @@
             // {
               cargoExtraArgs = "--locked -p lyrica";
               doCheck = false; # tests run in checks.cargo-test
-              meta.mainProgram = "lyrica";
+              meta = {
+                mainProgram = "lyrica";
+                license = lib.licenses.unlicense;
+              };
             }
           );
         in
