@@ -518,6 +518,7 @@ dependencies = [
  "clap",
  "futures-util",
  "lyrica-mpd",
+ "nom",
  "percent-encoding",
  "rust-embed",
  "serde",

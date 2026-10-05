@@ -10,6 +10,7 @@ lyrica-mpd.workspace = true
 
 axum.workspace = true
 clap.workspace = true
+nom.workspace = true
 percent-encoding.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
