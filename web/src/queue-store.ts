@@ -29,6 +29,8 @@ export type Listener = {
   current(): void;
   /** `show(true)`, before planning: the list places itself and reports its view. */
   opening(): void;
+  /** `show(false)`: the list stops its marquees. */
+  hiding(): void;
   /** `top()`: the list jumps to its first row. */
   top(): void;
   /** `recentre()`: the list centres the current song and ends any pause. */
@@ -193,6 +195,7 @@ export function queueStore(
     show(next) {
       shown = next;
       if (next) listener?.opening();
+      else listener?.hiding();
       plan();
     },
     top() {

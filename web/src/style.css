@@ -472,9 +472,7 @@ body {
 
 .queue-title,
 .queue-info {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .queue-title {
@@ -498,7 +496,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.queue-row.current > span {
+.queue-row.current > * {
   color: var(--bright-orange);
 }
 

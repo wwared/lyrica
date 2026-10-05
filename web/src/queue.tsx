@@ -1,5 +1,6 @@
 import { useLayoutEffect, useReducer, useRef } from "preact/hooks";
 import { covers, findCover } from "./cover";
+import { Marquee } from "./marquee";
 import { formatTime } from "./progress";
 import { AHEAD_VIEWPORTS, type QueueStore } from "./queue-store";
 import {
@@ -263,6 +264,9 @@ export function QueueList({
         render(0);
         probe();
       },
+      hiding() {
+        render(0);
+      },
       top() {
         paused = false;
         clearTimeout(resume);
@@ -367,6 +371,9 @@ export function QueueList({
   const first = v.anchor + v.first;
   const currentId = store.current.id;
   const rows = [];
+  // Full mode: the list keeps its rows, hidden; their marquees would still
+  // cost a style update every frame.
+  const hidden = !store.shown;
   for (let slot = 0; slot < pool; slot++) {
     const position = slotPosition(slot, first, pool);
     const entry = store.entry(position);
@@ -387,10 +394,17 @@ export function QueueList({
         style={{ transform: `translateY(${(position - v.anchor) * ROW_PX}px)` }}
       >
         <span class="queue-track">{entry?.track ?? ""}</span>
-        <span class="queue-title">{entry?.title ?? ""}</span>
-        <span class="queue-info">
-          {artist && album ? `${artist} · ${album}` : (artist ?? album ?? "")}
-        </span>
+        <div class="queue-title">
+          <Marquee text={entry?.title ?? ""} paused={hidden} />
+        </div>
+        <div class="queue-info">
+          <Marquee
+            text={
+              artist && album ? `${artist} · ${album}` : (artist ?? album ?? "")
+            }
+            paused={hidden}
+          />
+        </div>
         <span class="queue-time">
           {duration == null ? "" : formatTime(duration)}
         </span>
