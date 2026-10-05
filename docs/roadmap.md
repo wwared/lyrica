@@ -25,19 +25,11 @@ A toolbar button, at its right, that plays the current song's album from its fir
 4. **Dropped: previous / next re-centre.** Built (`App`'s previous and next called `store.recentre()` after sending), then removed after the iPhone check: the user wants the list left alone on skips; a cover tap re-centres.
 5. **Done: the button.** `"albumstart"` in `ws.ts`'s `Command`; in `App`'s toolbar, at its right, Material's `album` icon, disabled offline or without a current song; a tap sends and calls `store.recentre()` (`architecture.md` → "Queue actions").
 6. **Done: smoke against the real MPD.** Paused first entry, a 1,163-entry group (12 windows), groups starting at block edges, scrolled away, mid-fling, a natural song change while paused: all as designed (`architecture.md` → "Measurements" → "Queue actions, more cases"). It found one bug, fixed in its own commit: in Chromium a mid-fling album, previous, next or cover tap could leave the list 26–28 px off centre for good; now every pass re-centres from the halt until the list settles (`architecture.md` → "Cover and album taps").
-7. **iPhone** (the user, home-screen app on the LAN, mini mode):
-   - the album button at the toolbar's right, its icon lined up with the durations' right edge, muted like the playlists button; the pressed look; dimmed offline;
-   - mid-album with random and single on: a tap plays the album's first entry from 0:00, both modes off, the list centred on it;
-   - on the first entry, playing: a tap turns the modes off without restarting the song;
-   - during a fling, one tap on the album button, previous, next or the cover: it acts (in Chromium that touch only stops the fling, with no `click`; iOS unchecked), the fling stops, the list rests centred, not a row's half off;
-   - a swipe right after any of these taps follows the finger.
-
-   Results go to `architecture.md` → "Measurements", as an "**Album button by hand**" paragraph after "Pinned covers by hand". If a tap during a fling only stops it, that's a design question (the toolbar is outside the list), not part of this milestone.
-
-8. **Final docs pass** (one commit, no code):
+7. **Done: iPhone.** All as designed, taps during a fling included (`architecture.md` → "Measurements" → "Album button by hand"). Then previous / next re-centring was dropped (step 4). Open: the icon's look (the user is choosing among alternatives).
+8. **Final docs pass** (one commit, no code), once the icon is settled:
    - "Current state": the opening line becomes "Now playing, the live queue, stored playlists and the album button are done and checked on phones."; after "Stored playlists", a bullet "**Album from the start:** a toolbar button, at its right, plays the current song's album group from its first entry with random and single off (repeat and the queue untouched) and centres it.";
    - remove this milestone section;
-   - `architecture.md` already describes the feature as built, with no milestone or "planned" mentions left for it; only the iPhone paragraph above lands there;
+   - `architecture.md` already describes the feature as built, iPhone results included; nothing to add there;
    - the next milestone is the user's pick from "Open work" and "Later".
 
 ## Open work

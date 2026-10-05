@@ -290,3 +290,5 @@ A natural song change with centring paused by a swipe: `scrollTop` unchanged at 
 **iPhone** (home-screen app), the live queue by hand: taps play, fling-stopping taps don't, no tap flash; scroll indicator hidden; separator subtle; song-change jump and fade-in clean; covers already showing during drags, flings and a hard fling's tail, no stutter past the 13–14 MB covers; no fling outran the re-anchor margin; both ends stop with the bounce, rows kept.
 
 **Pinned covers by hand** (iPhone home-screen app, Android, desktop browsers): smooth while scrolling and through the bounce at both ends; song changes, tapped or automatic, clean.
+
+**Album button by hand** (iPhone home-screen app, mini mode): placement, pressed and disabled looks fine; mid-album and on a playing first entry it worked as designed. During a fling, one tap on the album button, previous, next (re-centring then) or the cover acted, unlike Chromium, and the list rested centred. A scroll right after a tap wasn't checked by hand (Chromium only).
