@@ -45,6 +45,7 @@ Queue checks (`architecture.md` → "Responsiveness"):
 - Compare against the previous build: build both (`git stash` the change, build, copy the binary to `/tmp`; unstash, build again) and run them side by side on two ports.
 - Per-frame state after layout, before paint: a `ResizeObserver` on a hidden element whose size a `requestAnimationFrame` loop toggles fires once per frame after layout; sample the visible rows there. Long tasks: a `PerformanceObserver` for `longtask`, added with `Page.addScriptToEvaluateOnNewDocument`.
 - Window traffic: wrap `WebSocket` in the page (same injected script) to count, delay or hold back `queue` replies.
+- Taps during a fling: an emulated touch on a button only stops the fling, with no `click` (iOS clicks); call the element's `click()` mid-fling instead.
 - Cover bytes: the mirror sends no `Timing-Allow-Origin`, so resource timing reports 0 bytes; count `Network.loadingFinished`'s `encodedDataLength` instead. `Network.clearBrowserCache` before each run.
 - Real queue regions: dispatch a `wheel` event on the list first (pauses auto-centring, so song changes don't move it), then jump by setting `scrollTop`, up to 8,000 rows at a time (the space's half; re-anchoring recentres between jumps). Most of the queue has ~6 folders per 100 rows, almost all with covers; 94,000–98,200 has a folder per row, without covers.
 
