@@ -98,12 +98,12 @@ Finds matches in the live queue with MPD's `playlistsearch` and centres the list
 - **Button:** Material's `search` icon in the toolbar's second slot, after the stored playlists button. With it the toolbar's evenly spaced row holds 8 buttons, 352 px: icons 46.6 px apart at 390 px, 44.4 at 375. Disabled offline.
 - **Search mode:** the button turns the toolbar into `[✕][input][🔍]`, the input focused. Input: `type="search"`, 16 px font (iOS zooms in on smaller), `user-select: text`, `enterkeyhint="search"`, autocorrect, autocapitalize and spellcheck off.
 - **Submit:** Return or 🔍 closes the keyboard and runs the query; a blank query does nothing. The query stays in the input, editable, and 🔍 stays. Every submission, the same query included, replaces the matches, as if search mode had been left and entered again.
-- **Pill:** while a search is active, `( ▲  3 / 120  ▼ )` over the list's bottom edge. ▲ previous, ▼ next, wrapping at the ends. While the server works, the "Loading…" box's spinner in place of the count; the total reads `…` until counted.
+- **Pill:** while a search is active, `( ▲  3 / 120  ▼ )` over the list's bottom edge. ▲ previous, ▼ next, wrapping at the ends. While the server works, the "Loading…" box's spinner in place of the count. The total reads `…` until known: from a chunk with fewer than 500 matches (its start plus its count), an empty chunk right after a full one, or the count (step 6). Until then ▲ on the first match does nothing (disabled): wrapping back needs the last match.
 - **Room for the pill:** in search mode only, the list's content ends in empty space as tall as the pill's footprint, so the last row can be centred or rest above the pill.
 - **First match:** the first after the current song, wrapping to the queue's first; from the top with no current song.
 - **Focused match:** centred instantly, like auto-centring; never played. Matching rows (among the known matches) get a subtle background; the focused one `bg2` and yellow text, like the playlists dialog's selection.
 - **Auto-centring** is off for the whole of search mode: song changes move the highlight, not the list. Scrolling by hand is free; ▲▼ continue from the focused match. Tapping a row plays it; search mode stays.
-- **Queue changes** make the matches' positions stale: the next ▲▼ reruns the query and continues from the focused match's position in its direction.
+- **Queue changes** make the matches' positions stale: the next ▲▼ reruns the query and continues from the focused match's position in its direction. The old matches stay highlighted until the rerun's arrive.
 - **Errors and no matches:** a toast in the toolbar's toast spot (parse error, MPD's error such as an invalid regex, offline; "No matches"); search mode stays.
 - **Leaving:** ✕, Escape (desktop) or switching to full mode clears the query, restores the toolbar, resumes auto-centring and centres the current song, like a cover tap. Nothing persists.
 
@@ -159,10 +159,13 @@ field = title | artist | albumartist | album | file | any
 
 ### Frontend
 
-- **`search.ts`** (Vitest): pure arithmetic: a match index's chunk, next / previous with wrap, the first index after `from`, the count text.
-- **`App`** holds the search state (query, id, version, chunks, total, focused index, pending); the toolbar renders either its buttons or the search bar; the pill sits in the queue area.
-- **Store / list:** `reveal(position)`, like `top()` and `recentre()`, centres a row; search mode pauses auto-centring until it ends and adds the room for the pill; rows ask whether they are a match or the focused one.
-- **Reused:** the toolbar toast, the loading spinner.
+- **`ws.ts`:** `search(query, from)` sends `search` with a fresh id (a counter), `fetch(start)` sends `matches` with the current search's id and query, `endSearch()` sends `searchend`; `matches`, `searchfailed` and `searchstale` are parsed and handed to one search callback, replies for another id dropped. A closed socket ends a pending search or fetch with `CONNECTION_LOST`, like a load.
+- **`search.ts`** (Vitest): the search state as pure transitions: query, id, version, chunks (start → positions), total, focused index, pending, stale; a reply in, the next state and the request to send (if any) out. Arithmetic: a match index's chunk, the position of an index among held chunks, whether a position is a match (binary search over the held chunks), the total rule above, next / previous with wrap, the count text.
+  - **▲▼ to an unheld chunk** fetches it, spinner meanwhile. Back `[]` for ▼: past the last match, total = its start, wrap to 0 (chunk 0 is always held). Another version, or `[]` for ▲: stale, rerun. `null` (unserved): a toast, focus unchanged.
+  - **Stale:** `searchstale`, a state push with another queue version, a chunk of another version or a reconnect. The next ▲▼ reruns: ▼ with `from` = the focused position, focusing `first`; ▲ with `from` = the focused position − 1 (`null` at 0), focusing `first − 1` (`first` 0: the ▲-on-the-first-match rule). `searchstale` while a submission's own search is pending reruns it at once, `from` from the latest snapshot.
+  - **Replies:** every chunk of the current id is kept (a search sends each chunk it reads); the reply with `first` focuses it and ends pending; chunk 0 empty ends it with the "No matches" toast; `searchfailed` with its error as the toast.
+- **`App`** holds the search state; the toolbar renders either its buttons or the search bar; the pill sits in the queue area. The toast moves from `playlists.tsx` to `App`, shared by both. The spinner (`.spinner`, whose inner disc is `bg0_s`) sits on a `bg0_s` pill.
+- **Store / list:** the list is memoized on the queue length, so search changes reach it through `QueueStore`, like song changes: `store.search(view | null)` enters, updates or leaves search mode (`view` answers match / focused for a position); `store.reveal(position)` centres a row, like `recentre()`. The listener gains a search-mode hook (auto-centring held: no resume timer, song changes don't centre; on leaving, resumed and recentred), `reveal` and a re-render on match changes. Rows get `.match` (a subtle background, e.g. gruvbox `bg1` `#3c3836`, distinct from the `bg0_s` stripes) and `.focused` (`bg2`, yellow text); text contrast stays ≥ 4.5:1 (the muted line may need `fg`). The room for the pill is extra space after the last row in search mode, which every max-scroll computation must include (`centre`, `resize`, re-anchoring, the scroll clamp).
 
 ## Frontend (web/)
 
