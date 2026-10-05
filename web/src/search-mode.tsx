@@ -122,7 +122,7 @@ export function useSearchMode(
   return mode;
 }
 
-/** The toolbar in search mode: `[✕][input ⓧ][🔍]`. Escape leaves too. */
+/** The toolbar in search mode: `[✕][input ⌫][🔍]`. Escape leaves too. */
 export function SearchBar({
   onClose,
   onSubmit,
@@ -228,11 +228,11 @@ export function SearchPill({
   );
 }
 
-// Material Icons (Apache 2.0): search, cancel, keyboard_arrow_up,
+// Material Icons (Apache 2.0): search, backspace, keyboard_arrow_up,
 // keyboard_arrow_down.
 export const SEARCH =
   "M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z";
 const CLEAR =
-  "M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z";
+  "M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z";
 const UP = "M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z";
 const DOWN = "M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z";

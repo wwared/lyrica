@@ -229,8 +229,8 @@ body {
   appearance: none;
 }
 
-/* A filled circle, unlike the plain ✕ that leaves. Over the input's right
-   end, its 44 px target overflowing the 36 px input. */
+/* Backspace, unlike the plain ✕ that leaves. Over the input's right end, its
+   44 px target overflowing the 36 px input. */
 .toolbar .search-clear {
   position: absolute;
   top: 50%;
