@@ -8,16 +8,18 @@ const HOLD_MS = 1000;
 const STEP = 5;
 
 /**
- * MPD's volume: a pill over the control strip, shown while `open`. Tap or
- * drag anywhere on it.
+ * MPD's volume: a vertical pill growing `up` or `down` from its toggle,
+ * shown while `open`. Tap or drag anywhere on it; the top is 100.
  */
 export function Volume({
   open,
+  direction,
   volume,
   disabled,
   onChange,
 }: {
   open: boolean;
+  direction: "up" | "down";
   volume: number | null;
   disabled: boolean;
   onChange: (volume: number) => void;
@@ -32,7 +34,7 @@ export function Volume({
   };
   const fromPointer = (e: PointerEvent) => {
     const r = rail.current!.getBoundingClientRect();
-    change(((e.clientX - r.left) / r.width) * 100);
+    change(((r.bottom - e.clientY) / r.height) * 100);
   };
   const keys: Record<string, number> = {
     ArrowLeft: -STEP,
@@ -44,12 +46,13 @@ export function Volume({
   };
 
   return (
-    <div class={open ? "volume open" : "volume"}>
+    <div class={open ? `volume ${direction} open` : `volume ${direction}`}>
       <div
         class="slider"
         role="slider"
         tabIndex={disabled ? -1 : 0}
         aria-label="Volume"
+        aria-orientation="vertical"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={shown ?? undefined}
@@ -73,11 +76,11 @@ export function Volume({
           <div class="track">
             <div
               class="fill"
-              style={{ transform: `scaleX(${(shown ?? 0) / 100})` }}
+              style={{ transform: `scaleY(${(shown ?? 0) / 100})` }}
             />
           </div>
           {shown !== null && (
-            <div class="thumb" style={{ left: `${shown}%` }} />
+            <div class="thumb" style={{ bottom: `${shown}%` }} />
           )}
         </div>
       </div>

@@ -109,12 +109,14 @@ body {
 }
 
 /* Fixed height, so the list never moves when buttons come or go. Positioned:
-   holds the toast. The first icon lines up with the rows' track column, the
-   last with the durations' right edge. */
+   holds the toast. Three columns, so the player toggles stay centred; the
+   first icon lines up with the rows' track column, the last with the
+   durations' right edge. */
 .toolbar {
   position: relative;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   height: 44px;
   padding: 0 10px;
@@ -142,8 +144,19 @@ body {
   opacity: 0.5;
 }
 
+.toolbar .playlists {
+  grid-column: 1;
+  justify-self: start;
+}
+
+.player-toggles {
+  grid-column: 2;
+  display: flex;
+}
+
 .toolbar .album-start {
-  margin-left: auto;
+  grid-column: 3;
+  justify-self: end;
 }
 
 .toolbar svg,
@@ -697,36 +710,50 @@ body {
   visibility: hidden;
 }
 
-/* A pill growing right from the volume toggle over the rest of the control
-   strip; the toggle stays on top, inside its left end. Only reachable in full
-   mode (the toggle is hidden in mini). */
-.volume {
-  grid-column: 1 / -1;
-  justify-self: start;
+/* Positioned above its neighbours: holds the pill, which overlaps them. */
+.volume-box {
+  position: relative;
   z-index: 1;
+}
+
+/* Stays on top, inside the pill's near end. */
+.volume-box > button {
+  position: relative;
+  z-index: 1;
+}
+
+/* A pill as wide as the volume toggle, growing from it over whatever is
+   there: up from the control strip (full mode), down from the toolbar
+   (mini). Same length in both. The level sits at the far end. */
+.volume {
+  position: absolute;
+  left: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  /* From the toggle's left edge (`.extras` margin) to the strip's end. */
-  width: calc(100% + 10px);
-  max-width: 360px;
-  height: 44px;
-  margin-left: -10px;
-  padding: 0 18px 0 56px;
+  width: 44px;
+  height: 240px;
   border: 1px solid var(--muted);
   border-radius: 22px;
   background: var(--bg);
-  clip-path: inset(0 calc(100% - 44px) 0 0 round 22px);
   visibility: hidden;
   transition:
     clip-path 200ms var(--switch-ease),
     visibility 0s 200ms;
 }
 
-/* Past the play-here toggle. */
-.stream .volume {
-  width: calc(100% - 34px);
-  margin-left: 34px;
+.volume.up {
+  bottom: 0;
+  flex-direction: column-reverse;
+  padding: 14px 0 56px;
+  clip-path: inset(calc(100% - 44px) 0 0 round 22px);
+}
+
+.volume.down {
+  top: 0;
+  flex-direction: column;
+  padding: 56px 0 14px;
+  clip-path: inset(0 0 calc(100% - 44px) round 22px);
 }
 
 .volume.open {
@@ -735,12 +762,12 @@ body {
   transition: clip-path 200ms var(--switch-ease);
 }
 
-/* The pill's height is the touch target. */
+/* The pill's width is the touch target. */
 .slider {
   flex: 1;
   align-self: stretch;
   display: flex;
-  align-items: center;
+  justify-content: center;
   touch-action: none;
   cursor: pointer;
 }
@@ -752,28 +779,35 @@ body {
 
 .rail {
   position: relative;
-  flex: 1;
   display: flex;
+  width: 4px;
+}
+
+.volume .track {
+  height: auto;
+}
+
+.volume .fill {
+  transform: scaleY(0);
+  transform-origin: bottom;
 }
 
 .thumb {
   position: absolute;
-  top: 50%;
+  left: 50%;
   width: 14px;
   height: 14px;
   border-radius: 50%;
   background: var(--orange);
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, 50%);
 }
 
-/* Fixed width, so the bar keeps its length. */
 .level {
-  width: 3ch;
   margin: 0;
+  line-height: 1rem;
   color: var(--muted);
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
-  text-align: end;
 }
 
 .controls {
@@ -782,11 +816,6 @@ body {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   margin-top: 16px;
-}
-
-/* One row, also for the volume pill overlapping the others. */
-.controls > * {
-  grid-row: 1;
 }
 
 .transport {
@@ -872,29 +901,13 @@ body {
   color: var(--muted);
 }
 
-.modes .random {
-  --on: var(--aqua);
-}
-
-.modes .single {
-  --on: var(--blue);
-}
-
-.modes .repeat {
-  --on: var(--purple);
-}
-
-.modes button[aria-pressed="true"] {
-  color: var(--on);
-}
-
 .modes svg {
   width: 20px;
   height: 20px;
 }
 
 /* Play here and volume; the first icon lines up with the start of the
-   progress bar. */
+   progress bar. Above the section's rows, which the volume pill overlaps. */
 .extras {
   grid-column: 1;
   justify-self: start;
@@ -909,11 +922,30 @@ body {
   color: var(--muted);
 }
 
-.controls .extras button[aria-pressed="true"] {
-  color: var(--green);
+/* The player toggles, in the control strip or the toolbar. */
+.play-here {
+  --on: var(--green);
 }
 
-.controls .extras button[aria-expanded="true"] {
+.random {
+  --on: var(--aqua);
+}
+
+.single {
+  --on: var(--blue);
+}
+
+.repeat {
+  --on: var(--purple);
+}
+
+.controls button[aria-pressed="true"],
+.toolbar button[aria-pressed="true"] {
+  color: var(--on);
+}
+
+.controls button[aria-expanded="true"],
+.toolbar button[aria-expanded="true"] {
   color: var(--yellow);
 }
 

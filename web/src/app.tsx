@@ -96,12 +96,66 @@ export function App() {
     ),
     [disabled],
   );
+  // The play-here, volume and mode toggles live in the control strip in full
+  // mode and in the toolbar in mini mode; each place renders its own.
+  const playHere = () =>
+    streamUrl !== null && (
+      <button
+        class="play-here"
+        aria-label="Play here"
+        aria-pressed={listening}
+        onClick={toggleListening}
+      >
+        <Icon path={HEADPHONES} />
+      </button>
+    );
+  // Gated by mode: an open pill is `visibility: visible`, which would show
+  // through the hidden place's `visibility: hidden`.
+  const volume = (inMini: boolean) => {
+    const open = volumeOpen && mini === inMini;
+    return (
+      <div class="volume-box">
+        <button
+          aria-label="Volume"
+          aria-expanded={open}
+          onClick={() => setVolumeOpen(!volumeOpen)}
+        >
+          <Icon path={VOLUME} />
+        </button>
+        <Volume
+          open={open}
+          direction={inMini ? "down" : "up"}
+          volume={snapshot?.volume ?? null}
+          disabled={disabled}
+          onChange={(volume) => send({ type: "volume", volume })}
+        />
+      </div>
+    );
+  };
+  const modes = () =>
+    MODES.map(({ mode, label, path }) => (
+      <button
+        key={mode}
+        class={mode}
+        aria-label={label}
+        aria-pressed={snapshot?.[mode] ?? false}
+        disabled={disabled}
+        onClick={() => send({ type: mode })}
+      >
+        <Icon path={path} />
+      </button>
+    ));
 
   return (
     <main class={mini ? "app mini" : "app"}>
       <section class="queue" aria-hidden={!mini}>
         <div class="toolbar">
           {playlists}
+          <div class="player-toggles">
+            {playHere()}
+            {volume(true)}
+            {modes()}
+          </div>
           <button
             class="album-start"
             aria-label="Play album from the start"
@@ -154,31 +208,11 @@ export function App() {
           onSeek={(position) => send({ type: "seek", position })}
         />
         {/* Three columns so the transport stays centred whatever is beside it. */}
-        <div class={streamUrl === null ? "controls" : "controls stream"}>
+        <div class="controls">
           <div class="extras">
-            {streamUrl !== null && (
-              <button
-                aria-label="Play here"
-                aria-pressed={listening}
-                onClick={toggleListening}
-              >
-                <Icon path={HEADPHONES} />
-              </button>
-            )}
-            <button
-              aria-label="Volume"
-              aria-expanded={volumeOpen}
-              onClick={() => setVolumeOpen(!volumeOpen)}
-            >
-              <Icon path={VOLUME} />
-            </button>
+            {playHere()}
+            {volume(false)}
           </div>
-          <Volume
-            open={volumeOpen}
-            volume={snapshot?.volume ?? null}
-            disabled={disabled}
-            onChange={(volume) => send({ type: "volume", volume })}
-          />
           <div class="transport">
             <button
               data-flip="move"
@@ -206,20 +240,7 @@ export function App() {
               <Icon path={NEXT} />
             </button>
           </div>
-          <div class="modes">
-            {MODES.map(({ mode, label, path }) => (
-              <button
-                key={mode}
-                class={mode}
-                aria-label={label}
-                aria-pressed={snapshot?.[mode] ?? false}
-                disabled={disabled}
-                onClick={() => send({ type: mode })}
-              >
-                <Icon path={path} />
-              </button>
-            ))}
-          </div>
+          <div class="modes">{modes()}</div>
         </div>
       </section>
     </main>
