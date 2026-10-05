@@ -547,6 +547,7 @@ body {
   width: var(--mini-art);
   height: var(--mini-art);
   margin: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .art img {

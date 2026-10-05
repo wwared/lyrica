@@ -29,6 +29,8 @@ export type Listener = {
   opening(): void;
   /** `top()`: the list jumps to its first row. */
   top(): void;
+  /** `recentre()`: the list centres the current song and ends any pause. */
+  recentre(): void;
 };
 
 /** Queue entries loaded on demand around the view (architecture.md → "Blocks"). */
@@ -45,6 +47,8 @@ export type QueueStore = {
   show(shown: boolean): void;
   /** After a stored playlist load: the list jumps to its first row. */
   top(): void;
+  /** A tap on the mini player's cover: the list centres the current song. */
+  recentre(): void;
   /** The current song from the last `state`; both `null` offline or with none. */
   readonly current: { position: number | null; id: number | null };
   /** The last `show`. */
@@ -199,6 +203,9 @@ export function queueStore(
     },
     top() {
       listener?.top();
+    },
+    recentre() {
+      listener?.recentre();
     },
     get current() {
       return current;

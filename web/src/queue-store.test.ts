@@ -45,6 +45,7 @@ const listen = (overrides: Partial<Listener>): Listener => ({
   current() {},
   opening() {},
   top() {},
+  recentre() {},
   ...overrides,
 });
 

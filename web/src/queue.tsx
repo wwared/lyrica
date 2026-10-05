@@ -215,6 +215,12 @@ export function QueueList({
       clearTimeout(settle);
       settle = setTimeout(settled, SETTLE_MS);
     };
+    const recentre = () => {
+      paused = false;
+      clearTimeout(resume);
+      centred();
+      render(0);
+    };
     // `stored` and `current` never render here: they come from the socket's
     // message handler, ahead of now playing's render.
     const unsubscribe = store.subscribe({
@@ -244,6 +250,7 @@ export function QueueList({
         moves.length = 0;
         render(0);
       },
+      recentre,
     });
     const resumed = () => {
       if (touches > 0) return;
@@ -288,13 +295,11 @@ export function QueueList({
       const row = (e.target as Element).closest(".queue-row");
       const entry = row && store.entry(Number(row.ariaPosInSet) - 1);
       if (!entry || entry.id === null) return;
+      // `playid` would restart the current song.
+      if (entry.id === store.current.id) return recentre();
       paused = false;
       clearTimeout(resume);
-      // `playid` would restart the current song.
-      if (entry.id !== store.current.id)
-        return send({ type: "playid", id: entry.id });
-      centred();
-      render(0);
+      send({ type: "playid", id: entry.id });
     };
     // Middle-click autoscroll.
     const onPointerDown = (e: PointerEvent) => {

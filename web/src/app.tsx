@@ -104,7 +104,10 @@ export function App() {
         {queueList}
       </section>
       <section class="now-playing" ref={nowPlaying}>
-        <Art cover={cover} />
+        <Art
+          cover={cover}
+          onClick={mini ? () => store.recentre() : undefined}
+        />
         <h1
           class={snapshot?.title ? "title" : "title placeholder"}
           data-flip="move"
@@ -291,10 +294,19 @@ function useCover(folder: string | null | undefined) {
       : covers.get(folder);
 }
 
-/** While the cover is unknown the square stays empty (background only). */
-function Art({ cover }: { cover: string | null | undefined }) {
+/**
+ * While the cover is unknown the square stays empty (background only). Mini:
+ * a tap centres the list on the current song.
+ */
+function Art({
+  cover,
+  onClick,
+}: {
+  cover: string | null | undefined;
+  onClick?: () => void;
+}) {
   return (
-    <div class="art" data-flip="scale">
+    <div class="art" data-flip="scale" onClick={onClick}>
       {cover !== undefined && <img src={cover ?? noCover} alt="" />}
     </div>
   );
