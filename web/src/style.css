@@ -182,7 +182,7 @@ body {
   visibility: hidden;
 }
 
-/* Search mode's toolbar: ✕, the input, 🔍. */
+/* Search mode's toolbar: ✕, the input with its clear button, 🔍. */
 .search-bar {
   flex: 1;
   display: flex;
@@ -191,13 +191,21 @@ body {
   min-width: 0;
 }
 
+/* Holds the clear button over the input's right end. */
+.search-field {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
 /* 16 px: iOS zooms in on a focused input with less. Selectable, unlike the
-   rest of the app. */
+   rest of the app. Right padding: room for the clear button. */
 .search-bar input {
   flex: 1;
   min-width: 0;
   height: 36px;
-  padding: 0 14px;
+  padding: 0 40px 0 14px;
   border: 1px solid var(--track);
   border-radius: 18px;
   background: var(--bg-soft);
@@ -215,10 +223,29 @@ body {
   border-color: var(--muted);
 }
 
-/* ✕ leaves search mode; a clear button inside would look like it. */
+/* Our own clear button instead: a 44 px target, the leave ✕'s colour. */
 .search-bar input::-webkit-search-cancel-button {
   -webkit-appearance: none;
   appearance: none;
+}
+
+/* A filled circle, unlike the plain ✕ that leaves. Over the input's right
+   end, its 44 px target overflowing the 36 px input. */
+.toolbar .search-clear {
+  position: absolute;
+  top: 50%;
+  right: -2px;
+  transform: translateY(-50%);
+}
+
+.toolbar .search-clear:active:not(:disabled) {
+  background: none;
+  color: var(--fg);
+}
+
+.search-clear svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* Over the list's bottom edge, 46 px tall; the list leaves room for it after
