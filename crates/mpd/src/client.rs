@@ -166,6 +166,21 @@ impl Client {
             .map(drop)
     }
 
+    /// Turns random and single off, then plays entry `id` (if given) from its
+    /// start, in one command list. Not a transaction: if `playid` fails
+    /// (`ACK` index 2), the modes stay off.
+    pub async fn play_in_order(&mut self, id: Option<u32>) -> Result<()> {
+        let random = ("random", &["0"][..]);
+        let single = ("single", &["0"][..]);
+        match id {
+            None => self.run_list(&[random, single]).await.map(drop),
+            Some(id) => self
+                .run_list(&[random, single, ("playid", &[&id.to_string()])])
+                .await
+                .map(drop),
+        }
+    }
+
     /// Waits until one of `subsystems` (all if empty) changes. Blocks the
     /// connection meanwhile, so idle on a dedicated client.
     pub async fn idle(&mut self, subsystems: &[Subsystem]) -> Result<Vec<Subsystem>> {
@@ -491,6 +506,46 @@ mod tests {
                     index: 1,
                     command: "load".into(),
                     message: "No such playlist".into(),
+                }
+            ),
+            other => panic!("{other:?}"),
+        }
+        client.ping().await.unwrap();
+        drop(client);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn play_in_order() {
+        let (addr, server) = fake(&[
+            ("command_list_begin\n", ""),
+            ("random \"0\"\n", ""),
+            ("single \"0\"\n", ""),
+            ("command_list_end\n", "OK\n"),
+            ("command_list_begin\n", ""),
+            ("random \"0\"\n", ""),
+            ("single \"0\"\n", ""),
+            ("playid \"42\"\n", ""),
+            ("command_list_end\n", "OK\n"),
+            ("command_list_begin\n", ""),
+            ("random \"0\"\n", ""),
+            ("single \"0\"\n", ""),
+            ("playid \"7\"\n", ""),
+            ("command_list_end\n", "ACK [50@2] {playid} No such song\n"),
+            ("ping\n", "OK\n"),
+        ])
+        .await;
+        let mut client = Client::connect(addr).await.unwrap();
+        client.play_in_order(None).await.unwrap();
+        client.play_in_order(Some(42)).await.unwrap();
+        match client.play_in_order(Some(7)).await {
+            Err(Error::Ack(ack)) => assert_eq!(
+                ack,
+                Ack {
+                    code: 50,
+                    index: 2,
+                    command: "playid".into(),
+                    message: "No such song".into(),
                 }
             ),
             other => panic!("{other:?}"),
